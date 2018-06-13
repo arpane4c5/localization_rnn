@@ -31,11 +31,11 @@ if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
     LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
     DATASET = "/opt/datasets/cricket/ICC_WT20"
 
-num_classes = 5
-input_size = 5  # one-hot size
-hidden_size = 5  # output from the LSTM. 5 to directly predict one-hot
+num_classes = 2
+input_size = 1  # one-hot size
+hidden_size = 1  # output from the LSTM. 5 to directly predict one-hot
 batch_size = 1   # one sentence
-sequence_length = 6  # |ihello| == 6
+sequence_length = 4404  # |ihello| == 6
 num_layers = 1  # one-layer rnn
 
 
@@ -50,7 +50,8 @@ class RNN(nn.Module):
         self.hidden_size = hidden_size
         self.sequence_length = sequence_length
 
-        self.rnn = nn.RNN(input_size=5, hidden_size=5, batch_first=True)
+        self.rnn = nn.RNN(input_size=self.input_size, hidden_size=self.hidden_size, \
+                          batch_first=True)
 
     def forward(self, x):
         # Initialize hidden and cell states
@@ -66,7 +67,7 @@ class RNN(nn.Module):
         # h_0: (num_layers * num_directions, batch, hidden_size)
 
         out, _ = self.rnn(x, h_0)
-        return out.view(-1, num_classes)
+        return out.view(-1, num_classes-1)
 
 
 # Split the dataset files into training, validation and test sets
@@ -316,7 +317,25 @@ def make_predictions(vids_lst, model, color, bins, split = "val"):
         preds[vname] = idx_preds    # list of indices for positive predictions
         print(vname, idx_preds)
     
-    return calculate_accuracy(preds)
+    #return calculate_accuracy(preds)
+    return preds
+
+# send a list of lists containing start and end frames of actions
+# eg [98, 218], [376, 679], [2127, 2356], [4060, 4121], [4137, 4250]]
+# Return a sequence of action labels corresponding to frame features
+def get_vid_labels_vec(labels, vid_len):
+    if labels is None or len(labels)==0:
+        return []
+    v = []
+    for i,x in enumerate(labels):
+        if i==0:
+            v.extend([0]*(x[0]-1))
+        else:
+            v.extend([0]*(x[0]-labels[i-1][1]-1))
+        v.extend([1]*(x[1]-x[0]+1))  
+    v.extend([0]*(vid_len - labels[-1][1]))
+    return v
+
 
 # add feature: no of frames since last CUT
 # sample is the numpy array containing the sequence of histogram difference values for one video
@@ -334,6 +353,16 @@ def add_feature(sample, vcuts_lst):
     print "Len(nFr) : "+str(len(nFr))
     return np.hstack((sample, np.array(nFr).reshape((len(nFr),1))))
 
+def getNFrames(vid):
+    cap = cv2.VideoCapture(vid)
+    if not cap.isOpened():
+        import sys
+        print "Capture Object not opened ! Abort"
+        sys.exit(0)
+        
+    l = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+    return l
 
 if __name__=="__main__":
     # Divide the samples files into training set, validation and test sets
@@ -351,43 +380,85 @@ if __name__=="__main__":
     val_lab = [f+".json" for f in val_lst]
     test_lab = [f+".json" for f in test_lst]
     
-    # get the positions where cuts exist for training set
-    tr_shots_lst = []
-    for t in train_lab:
-        with open(os.path.join(LABELS, t), 'r') as fobj:
-            tr_shots_lst.append(json.load(fobj))
+    #####################################################################
     
-    pos_samples = []
-    neg_samples = []
+    tr_labs = [os.path.join(LABELS, f) for f in train_lab]
+    sizes = [getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
+    print "Size : {}".format(sizes)
+    from Video_Dataset import VideoDataset
+    hlDataset = VideoDataset(tr_labs, sizes)
+    print hlDataset.__len__
     
-    #idx2char = ['h', 'i', 'e', 'l', 'o']
+    #####################################################################
     
-    x_data = hist_diffs_train[0]    # 4404 x 1
-    
-    # seq len = 4404 (len of video)
-    # dim of vector = 1 (more for HOG etc.)
-    # Batch = 1
-    
-    # Teach hihell -> ihello
-    #x_data = [[0, 1, 0, 2, 3, 3]]   # hihell
-    #x_one_hot = [[[1, 0, 0, 0, 0],   # h 0
-    #              [0, 1, 0, 0, 0],   # i 1
-    #              [1, 0, 0, 0, 0],   # h 0
-    #              [0, 0, 1, 0, 0],   # e 2
-    #              [0, 0, 0, 1, 0],   # l 3
-    #              [0, 0, 0, 1, 0]]]  # l 3
-    
-    #y_data = [1, 0, 2, 3, 3, 4]    # ihello
-    
-    # As we have one batch of samples, we will change them to variables only once
-    # Convert to shape (1, 4404, 1)  (Feature Vector size is 1)
-    inputs = Variable(torch.Tensor(np.expand_dims(x_data, 0)))
-    labels = Variable(torch.LongTensor(y_data))
-    
-    # get vector sequences for video frames
-    # sequences in hist_diffs_train 
-    
-    # Prepare the RNN 
+#    # get the positions where cuts exist for training set
+#    tr_shots_lst = []
+#    for t in train_lab:
+#        with open(os.path.join(LABELS, t), 'r') as fobj:
+#            tr_shots_lst.append(json.load(fobj))
+#    
+#    pos_samples = []
+#    neg_samples = []
+#    
+#    #idx2char = ['h', 'i', 'e', 'l', 'o']
+#    
+#    x_data = hist_diffs_train[0]    # 4404 x 1
+#    
+#    for idx, v in enumerate(tr_shots_lst):  # v is a dict with labels
+#        vid_pos = v['ICC WT20/'+train_lab[idx].rsplit('.', 1)[0]+'.avi']        
+#        y_data = get_vid_labels_vec(vid_pos, hist_diffs_train[idx].shape[0])
+#        break
+#                            
+#    y_data.append(0)
+#    y_data = y_data[1:]
+#    # seq len = 4404 (len of video)
+#    # dim of vector = 1 (more for HOG etc.)
+#    # Batch = 1
+#    
+#    # Teach hihell -> ihello
+#    #x_data = [[0, 1, 0, 2, 3, 3]]   # hihell
+#    #x_one_hot = [[[1, 0, 0, 0, 0],   # h 0
+#    #              [0, 1, 0, 0, 0],   # i 1
+#    #              [1, 0, 0, 0, 0],   # h 0
+#    #              [0, 0, 1, 0, 0],   # e 2
+#    #              [0, 0, 0, 1, 0],   # l 3
+#    #              [0, 0, 0, 1, 0]]]  # l 3
+#    
+#    #y_data = [1, 0, 2, 3, 3, 4]    # ihello
+#    
+#    # As we have one batch of samples, we will change them to variables only once
+#    # Convert to shape (1, 4404, 1)  (Feature Vector size is 1)
+#    inputs = Variable(torch.Tensor(np.expand_dims(x_data, 0)))
+#    labels = Variable(torch.LongTensor(y_data))
+#    
+#    # get vector sequences for video frames
+#    # sequences in hist_diffs_train 
+#    
+#    # Prepare the RNN 
+##    # Instantiate RNN model
+#    rnn = RNN(num_classes, input_size, hidden_size, num_layers)
+#    print(rnn)
+#    
+#    # Set loss and optimizer function
+#    # CrossEntropyLoss = LogSoftmax + NLLLoss
+#    criterion = torch.nn.CrossEntropyLoss()
+#    optimizer = torch.optim.Adam(rnn.parameters(), lr=0.1)
+#    
+#    # Train the model
+#    for epoch in range(10):
+#        outputs = rnn(inputs)
+#        optimizer.zero_grad()
+#        loss = criterion(outputs, labels)
+#        loss.backward()
+#        optimizer.step()
+#        _, idx = outputs.max(1)
+#        idx = idx.data.numpy()
+#        #result_str = [idx2char[c] for c in idx.squeeze()]
+#        
+#        print("epoch: %d, loss: %1.3f" % (epoch + 1, loss.data[0]))
+#        #print("Predicted string: ", ''.join(idx))
+#    
+#    print("Learning finished!")    
 
 #    for idx, sample in enumerate(hist_diffs_train):
 #        #sample = add_feature(sample, cuts_lst[idx])     # add feature #Frames since last CUT
@@ -397,23 +468,6 @@ if __name__=="__main__":
 #        neg_samples.append(sample[neg_indices,:])
 #    
 #    
-#    # Save the pos_samples and neg_samples lists to disk
-##    with open("pos_samples_bgr.pkl", "wb") as fp:
-##        pickle.dump(pos_samples, fp)
-##        
-##    with open("neg_samples_bgr.pkl", "wb") as fp:
-##        pickle.dump(neg_samples, fp)
-#        
-#    # Read the lists from disk to the pickle files
-##    with open("pos_samples.pkl", "rb") as fp:
-##        pos_samples = pickle.load(fp)
-##    
-##    with open("neg_samples.pkl", "rb") as fp:
-##        neg_samples = pickle.load(fp)
-#        
-#    #print "Visualizing positive and negative training samples ..."
-#    #visualize_feature(pos_samples, "Positive Samples", 30)
-#    #visualize_feature(neg_samples, "Negative Samples", 300)
 #    
 #    df = create_dataframe(pos_samples, neg_samples)
 #    print df.shape
@@ -482,27 +536,5 @@ if __name__=="__main__":
 #    
 #    # 
 #    
-#    # Instantiate RNN model
-#    rnn = RNN(num_classes, input_size, hidden_size, num_layers)
-#    print(rnn)
-#    
-#    # Set loss and optimizer function
-#    # CrossEntropyLoss = LogSoftmax + NLLLoss
-#    criterion = torch.nn.CrossEntropyLoss()
-#    optimizer = torch.optim.Adam(rnn.parameters(), lr=0.1)
-#    
-#    # Train the model
-#    for epoch in range(100):
-#        outputs = rnn(inputs)
-#        optimizer.zero_grad()
-#        loss = criterion(outputs, labels)
-#        loss.backward()
-#        optimizer.step()
-#        _, idx = outputs.max(1)
-#        idx = idx.data.numpy()
-#        result_str = [idx2char[c] for c in idx.squeeze()]
-#        print("epoch: %d, loss: %1.3f" % (epoch + 1, loss.data[0]))
-#        print("Predicted string: ", ''.join(result_str))
-#    
-#    print("Learning finished!")    
+
     

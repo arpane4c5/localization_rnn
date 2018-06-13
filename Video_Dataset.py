@@ -1,0 +1,106 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jun 11 12:09:32 2018
+
+@author: Arpan
+Refer: https://github.com/hunkim/PyTorchZeroToAll/blob/master/name_dataset.py
+"""
+
+# References
+# https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/01-basics/pytorch_basics/main.py
+# http://pytorch.org/tutorials/beginner/data_loading_tutorial.html#dataset-class
+import torch
+import numpy as np
+from torch.autograd import Variable
+from torch.utils.data import Dataset, DataLoader
+import json
+import os
+
+# Local Paths
+LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
+DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+
+# Server Paths
+if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
+    LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
+    DATASET = "/opt/datasets/cricket/ICC_WT20"
+
+class VideoDataset(Dataset):
+    """ Cricket Strokes dataset."""
+
+    # Initialize your data, download, etc.
+    # vidsList: List of paths to labels files containing action instances
+    def __init__(self, vidsList, vidsSizes, seq_size=10, is_train_set=False):
+        
+        #filename = './data/names_train.csv.gz' if is_train_set else './data/names_test.csv.gz'
+        
+        # read files and get training, testing and validation partitions
+        #filesList = os.listdir(labelsPath)
+        self.shots = []
+        for i, labfile in enumerate(vidsList):
+            assert os.path.exists(labfile), "Path does not exist"
+            with open(labfile, 'r') as fobj:
+                self.shots.append(json.load(fobj))
+                
+        self.keys = []
+        self.frm_sequences = []
+        self.labels = []
+        for i, labfile in enumerate(vidsList):
+            k = self.shots[i].keys()[0] #dict with key values and list of tuples
+            pos = self.shots[i][k]  # list of tuples
+            
+            # (start, end) frame no
+            self.frm_sequences.extend([(t, t+seq_size-1) for t in \
+                                       range(vidsSizes[i]-seq_size+1)])
+            self.keys.extend([k]*(vidsSizes[i]-seq_size+1))
+            
+            act_no = 0
+            (start, end) = (-1, -1)
+            # Get the label
+            if len(pos)>0:
+                (start, end) = pos[act_no]
+            # Iterate over the list of tuples
+            for t in range(vidsSizes[i]-seq_size):
+                
+                    
+                self.labels.append()
+        
+        self.videosList = vidsList
+        self.len = len(self.keys)
+        self.seq_size = seq_size
+
+    def __getitem__(self, index):
+        return self.keys[index], self.frm_sequences[index]
+
+    def __len__(self):
+        return self.len
+
+    def __seq_size__(self):
+        return self.seq_size
+    
+#    def get_countries(self):
+#        return self.country_list
+#
+#    def get_country(self, id):
+#        return self.country_list[id]
+#
+#    def get_country_id(self, country):
+#        return self.country_list.index(country)
+
+# Test the loader
+#if __name__ == "__main__":
+#    dataset = VideoDataset(False)
+#    print(dataset.get_countries())
+#    print(dataset.get_country(3))
+#    print(dataset.get_country_id('Korean'))
+#
+#    train_loader = DataLoader(dataset=dataset,
+#                              batch_size=10,
+#                              shuffle=True)
+#
+#    print(len(train_loader.dataset))
+#    for epoch in range(2):
+#        for i, (names, countries) in enumerate(train_loader):
+#            # Run your training process
+#            print(epoch, i, "names", names, "countries", countries)
