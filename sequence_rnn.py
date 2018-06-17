@@ -13,23 +13,22 @@ import cv2
 import os
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import pandas as pd
 import json
-
-
 import pickle
 
 torch.manual_seed(777)  # reproducibility
 
 # Local Paths
 LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket"
 
 # Server Paths
 if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
     LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-    DATASET = "/opt/datasets/cricket/ICC_WT20"
+    DATASET = "/opt/datasets/cricket"
 
 num_classes = 2
 input_size = 1  # one-hot size
@@ -222,46 +221,6 @@ def visualize_feature(samples_lst, title="Histogram", bins=300):
     plt.xlabel("Bins")
     plt.ylabel("Frequency")
 
-        
-def create_dataframe(pos_samples, neg_samples):
-    # create a r X 2 matrix with 2nd column of 1s (for pos_samples) or 0s (neg_samples)
-    pos_feats = pos_samples[0]
-    for i in range(1, len(pos_samples)):
-        pos_feats = np.vstack((pos_feats, pos_samples[i]))
-    pos_feats = np.hstack((pos_feats, np.ones((pos_feats.shape[0], 1))))
-    
-    # create similarly for negative samples
-    neg_feats = neg_samples[0]
-    for i in range(1, len(neg_samples)):
-        neg_feats = np.vstack((neg_feats, neg_samples[i]))
-    neg_feats = np.hstack((neg_feats, np.zeros((neg_feats.shape[0], 1))))
-    
-    # change this if no of features are different
-    if pos_feats.shape[1]==2:
-        cols = ["X", "Y"]
-    else:
-        cols = ["X1", "X2", "X3", "Y"]
-    df = pd.DataFrame(np.vstack((pos_feats, neg_feats)), columns=cols)
-    
-    # shuffle dataframe
-    df = df.sample(frac=1).reset_index(drop=True)
-    return df
-    
-## given a dataframe in the form [X1, X2, .., Y] with Y being binary, train a model
-#def train_model1(df_train):
-#    #clf = svm.SVC(kernel = 'linear')
-#    clf = RandomForestClassifier(max_depth=2, random_state=1234)
-#    # For grid search over the parameters of gamma and kernel functions
-##    clf = GridSearchCV(estimator=svm.SVC(), param_grid=parameter_candidates)
-#    clf.fit(df_train.loc[:, df_train.columns != 'Y'], df_train.loc[:,'Y'])
-#    
-##    # Print out the results 
-##    print('Best score for training data:', clf.best_score_)
-##    print('Best `C`:',clf.best_estimator_.C)
-##    print('Best kernel:',clf.best_estimator_.kernel)
-##    print('Best `gamma`:',clf.best_estimator_.gamma)
-#    
-#    return clf
     
 ## calculate the precision, recall and f-measure for the validation of test set
 ## params: preds_dict: {"vid_name": [98, 138, ...], ...}
@@ -337,22 +296,6 @@ def get_vid_labels_vec(labels, vid_len):
     return v
 
 
-# add feature: no of frames since last CUT
-# sample is the numpy array containing the sequence of histogram difference values for one video
-# vcuts_lst is the list of values where CUTs occur for one video
-# returns sample with an additional column of counts of #Frames since last CUT
-def add_feature(sample, vcuts_lst):
-    # add the "#frames since last CUT" values
-    nFr = []
-    for i,fno in enumerate(vcuts_lst):
-        if i==0:    # add values till 1st CUT
-            nFr.extend(range(1,fno+1))
-        else:       # reset count after each CUT and extend list
-            nFr.extend(range(fno-vcuts_lst[i-1]))
-    nFr.extend(range(len(sample)-len(nFr)))     # After final CUT to the end
-    print "Len(nFr) : "+str(len(nFr))
-    return np.hstack((sample, np.array(nFr).reshape((len(nFr),1))))
-
 def getNFrames(vid):
     cap = cv2.VideoCapture(vid)
     if not cap.isOpened():
@@ -363,6 +306,24 @@ def getNFrames(vid):
     l = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
     return l
+
+# Iteratively take the batch information and extract the feature sequences from the videos
+# datasetpath : Prefix of the path to the dataset containing the videos
+# videoFiles : list/tuple of filenames for the videos (size n)
+# sequences :  list of start frame numbers and end frame numbers 
+# sequences[0] and [1] are torch.LongTensor of size n each.
+def getFeatureVectors(datasetpath, videoFiles, sequences):
+    # Iterate over the videoFiles in the batch and extract the corresponding feature
+    for i, videoFile in enumerate(videoFiles):
+        # use capture object to get the sequences
+        cap = cv2.VideoCapture(os.path.join(datasetpath, videoFile))
+        if not cap.isOpened():
+            print "Capture object not opened : {}".format(videoFile)
+            import sys
+            sys.exit(0)
+            
+        
+        # get feature sequences 
 
 if __name__=="__main__":
     # Divide the samples files into training set, validation and test sets
@@ -386,8 +347,19 @@ if __name__=="__main__":
     sizes = [getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
     print "Size : {}".format(sizes)
     from Video_Dataset import VideoDataset
-    hlDataset = VideoDataset(tr_labs, sizes)
+    hlDataset = VideoDataset(tr_labs, sizes, is_train_set = True)
     print hlDataset.__len__
+    
+    # Create a DataLoader object and sample batches of examples. 
+    # These batch samples are used to extract the features from videos parallely
+    train_loader = DataLoader(dataset=hlDataset, batch_size=10, shuffle=True)
+
+    print(len(train_loader.dataset))
+    for epoch in range(2):
+        for i, (keys, seqs, labels) in enumerate(train_loader):
+            # Run your training process
+            print(epoch, i, "keys", keys, "Sequences", seqs, "Labels", labels)
+            feats = getFeatureVectors(keys, seqs)
     
     #####################################################################
     
@@ -466,35 +438,6 @@ if __name__=="__main__":
 #        neg_indices = list(set(range(len(sample))) - set(cuts_lst[idx]))
 #        # subset
 #        neg_samples.append(sample[neg_indices,:])
-#    
-#    
-#    
-#    df = create_dataframe(pos_samples, neg_samples)
-#    print df.shape
-#    
-#    # Training a model given a dataframe
-#    print "Training model ..."
-#    trained_model = train_model1(df)
-#    
-#    # get predictions on the validation or test set videos
-#    #pr = svm_model.predict(df.sample(frac=0.001).loc[:,['X']])
-#    
-#    # extract the validation/test set features and make predictions on the same
-#    print "Predicting on the validation set !!"
-#    [recall, precision, f_measure] = make_predictions(val_lst, trained_model, color, bins)
-#    print "Precision : "+str(precision)
-#    print "Recall : "+ str(recall)
-#    print "F-measure : "+str(f_measure)
-#    
-#    print "Predicting on the test set !!"
-#    [recall, precision, f_measure] = make_predictions(test_lst, trained_model, color, bins)
-#    print "Precision : "+str(precision)
-#    print "Recall : "+ str(recall)
-#    print "F-measure : "+str(f_measure)
-#    
-#    ## Save model to disk
-#    from sklearn.externals import joblib
-#    joblib.dump(trained_model, "sbd_model_RF_histDiffs_gray.pkl")
 #    
 #    #######################################################
 #    # Extend 1:

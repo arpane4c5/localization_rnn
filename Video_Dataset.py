@@ -19,12 +19,12 @@ import os
 
 # Local Paths
 LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket"
 
 # Server Paths
 if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
     LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-    DATASET = "/opt/datasets/cricket/ICC_WT20"
+    DATASET = "/opt/datasets/cricket"
 
 class VideoDataset(Dataset):
     """ Cricket Strokes dataset."""
@@ -43,35 +43,62 @@ class VideoDataset(Dataset):
             with open(labfile, 'r') as fobj:
                 self.shots.append(json.load(fobj))
                 
+        
+        # Check seq_size is valid ie., less than min action size
+        
         self.keys = []
         self.frm_sequences = []
         self.labels = []
-        for i, labfile in enumerate(vidsList):
+        for i, labfile in enumerate(vidsList):     
             k = self.shots[i].keys()[0] #dict with key values and list of tuples
             pos = self.shots[i][k]  # list of tuples
+            pos.reverse()   # reverse list and keep popping
             
             # (start, end) frame no
             self.frm_sequences.extend([(t, t+seq_size-1) for t in \
                                        range(vidsSizes[i]-seq_size+1)])
+            # file names (without full path), only keys
             self.keys.extend([k]*(vidsSizes[i]-seq_size+1))
-            
-            act_no = 0
+
+            # Add labels for training set only
             (start, end) = (-1, -1)
             # Get the label
             if len(pos)>0:
-                (start, end) = pos[act_no]
-            # Iterate over the list of tuples
-            for t in range(vidsSizes[i]-seq_size):
-                
+                (start, end) = pos.pop()
+                # Iterate over the list of tuples
+            for t in range(vidsSizes[i]-seq_size+1):
+                if t <= (start-seq_size):
+                    self.labels.append([seq_size, 0])   # all 0's 
+                elif t < start:
+                    self.labels.append([start-t, t+seq_size-start])
+                elif t <= (end+1 - seq_size):
+                    self.labels.append([0, seq_size])
+                elif t <= end:
+                    self.labels.append([t+seq_size-(end+1), end+1-t])
+                else:
+                    if len(pos) > 0:
+                        (start, end) = pos.pop()
+                        if t <= (start-seq_size):
+                            self.labels.append([seq_size, 0])
+                        elif t < start:
+                            self.labels.append([start-t, t+seq_size-start])
+                        elif t <= (end+1 - seq_size):       # Check if more is needed
+                            self.labels.append([0, seq_size])
+                    else:
+                        # For last part with non-action frames
+                        self.labels.append([seq_size, 0])
                     
-                self.labels.append()
+            #if is_train_set:
+                # remove values with transitions eg (1, 9), (8, 2) etc
+                # Keep only (0, 10) or (10, 0) ie., single action sequences
+                
         
         self.videosList = vidsList
         self.len = len(self.keys)
         self.seq_size = seq_size
 
     def __getitem__(self, index):
-        return self.keys[index], self.frm_sequences[index]
+        return self.keys[index], self.frm_sequences[index], self.labels[index]
 
     def __len__(self):
         return self.len
