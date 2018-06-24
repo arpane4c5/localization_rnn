@@ -14,7 +14,7 @@ import os
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import pandas as pd
 import json
 import time
@@ -29,7 +29,7 @@ DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
 # Server Paths
 if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
     LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-    DATASET = "/opt/datasets/cricket/ICC WT20"
+    DATASET = "/opt/datasets/cricket/ICC_WT20"
 
 num_classes = 2
 input_size = 1  # one-hot size
@@ -130,10 +130,10 @@ class RNNClassifier(nn.Module):
 
 def create_variable(tensor):
     # Do cuda() before wrapping with variable
-    #if torch.cuda.is_available():
-    #    return Variable(tensor.cuda())
-    #else:
-    return Variable(tensor)
+    if torch.cuda.is_available():
+        return Variable(tensor.cuda())
+    else:
+        return Variable(tensor)
 
 # Split the dataset files into training, validation and test sets
 def split_dataset_files():
@@ -259,26 +259,26 @@ def extract_hog_from_video(srcVid):
     return seq
 
 
-# Visualize the positive and negative samples
-# Params: list of numpy arrays of size nFrames-1 x Channels
-def visualize_feature(samples_lst, title="Histogram", bins=300):
-    
-    if len(samples_lst) == 1:
-        print "Cannot Visualize !! Only single numpy array in list !!"
-        return
-    elif len(samples_lst) > 1:
-        sample = np.vstack((samples_lst[0], samples_lst[1]))
-    
-    # Iterate over the list to vstack those and get a single matrix
-    for idx in range(2, len(samples_lst)):
-        sample = np.vstack((sample, samples_lst[idx]))
-        
-    vals = list(sample.reshape(sample.shape[0]))
-    
-    plt.hist(vals, normed=True, bins=bins)
-    plt.title(title)
-    plt.xlabel("Bins")
-    plt.ylabel("Frequency")
+## Visualize the positive and negative samples
+## Params: list of numpy arrays of size nFrames-1 x Channels
+#def visualize_feature(samples_lst, title="Histogram", bins=300):
+#    
+#    if len(samples_lst) == 1:
+#        print "Cannot Visualize !! Only single numpy array in list !!"
+#        return
+#    elif len(samples_lst) > 1:
+#        sample = np.vstack((samples_lst[0], samples_lst[1]))
+#    
+#    # Iterate over the list to vstack those and get a single matrix
+#    for idx in range(2, len(samples_lst)):
+#        sample = np.vstack((sample, samples_lst[idx]))
+#        
+#    vals = list(sample.reshape(sample.shape[0]))
+#    
+#    plt.hist(vals, normed=True, bins=bins)
+#    plt.title(title)
+#    plt.xlabel("Bins")
+#    plt.ylabel("Frequency")
 
     
 ## calculate the precision, recall and f-measure for the validation of test set
@@ -498,7 +498,7 @@ def make_variables(feats, labels):
         else:
             target.extend([0]*labels[0][i] + [1]*(labels[1][i]-1))
     # Form a wrap into a tensor variable as B X S X I
-    return Variable(feats), Variable(torch.Tensor(target))
+    return create_variable(feats), create_variable(torch.Tensor(target))
 
 
 if __name__=="__main__":
@@ -529,7 +529,7 @@ if __name__=="__main__":
     # Parameters and DataLoaders
     HIDDEN_SIZE = 100
     N_LAYERS = 1
-    BATCH_SIZE = 10
+    BATCH_SIZE = 20
     N_EPOCHS = 2
     N_CHARS = 1152      # taking grid_size = 20 get this feature vector size 
     
@@ -540,13 +540,13 @@ if __name__=="__main__":
     #N_COUNTRIES = len(train_dataset.get_countries())
         
     classifier = RNNClassifier(N_CHARS, HIDDEN_SIZE, 1, N_LAYERS)
-    #if torch.cuda.device_count() > 1:
-    #    print("Let's use", torch.cuda.device_count(), "GPUs!")
-    #    # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
-    #    classifier = nn.DataParallel(classifier)
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
+        classifier = nn.DataParallel(classifier)
 
-    #if torch.cuda.is_available():
-    #    classifier.cuda()
+    if torch.cuda.is_available():
+        classifier.cuda()
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     #criterion = nn.CrossEntropyLoss()
@@ -566,7 +566,7 @@ if __name__=="__main__":
         for i, (keys, seqs, labels) in enumerate(train_loader):
             # Run your training process
             print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
-            feats = getFeatureVectors(DATASET, keys, seqs)
+            feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
             #break
 
             # Training starts here
@@ -636,17 +636,7 @@ if __name__=="__main__":
 #    # seq len = 4404 (len of video)
 #    # dim of vector = 1 (more for HOG etc.)
 #    # Batch = 1
-#    
-#    # Teach hihell -> ihello
-#    #x_data = [[0, 1, 0, 2, 3, 3]]   # hihell
-#    #x_one_hot = [[[1, 0, 0, 0, 0],   # h 0
-#    #              [0, 1, 0, 0, 0],   # i 1
-#    #              [1, 0, 0, 0, 0],   # h 0
-#    #              [0, 0, 1, 0, 0],   # e 2
-#    #              [0, 0, 0, 1, 0],   # l 3
-#    #              [0, 0, 0, 1, 0]]]  # l 3
-#    
-#    #y_data = [1, 0, 2, 3, 3, 4]    # ihello
+
 #    
 #    # As we have one batch of samples, we will change them to variables only once
 #    # Convert to shape (1, 4404, 1)  (Feature Vector size is 1)
