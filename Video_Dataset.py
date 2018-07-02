@@ -37,7 +37,7 @@ class VideoDataset(Dataset):
         
         # read files and get training, testing and validation partitions
         #filesList = os.listdir(labelsPath)
-        self.shots = []
+        self.shots = [] # will contain list of dictionaries with vidKey:LabelTuples
         for i, labfile in enumerate(vidsList):
             assert os.path.exists(labfile), "Path does not exist"
             with open(labfile, 'r') as fobj:
@@ -50,8 +50,8 @@ class VideoDataset(Dataset):
         self.frm_sequences = []
         self.labels = []
         for i, labfile in enumerate(vidsList):     
-            k = self.shots[i].keys()[0] #dict with key values and list of tuples
-            pos = self.shots[i][k]  # list of tuples
+            k = self.shots[i].keys()[0] #key value for the ith dict
+            pos = self.shots[i][k]  # get list of tuples for k
             pos.reverse()   # reverse list and keep popping
             
             # (start, end) frame no
@@ -65,7 +65,7 @@ class VideoDataset(Dataset):
             # Get the label
             if len(pos)>0:
                 (start, end) = pos.pop()
-                # Iterate over the list of tuples
+            # Iterate over the list of tuples and form labels for each sequence
             for t in range(vidsSizes[i]-seq_size+1):
                 if t <= (start-seq_size):
                     self.labels.append([seq_size, 0])   # all 0's 

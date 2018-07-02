@@ -16,9 +16,10 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 #import matplotlib.pyplot as plt
 import pandas as pd
-import json
 import time
+import shutil
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from Video_Dataset import VideoDataset
 
 torch.manual_seed(777)  # reproducibility
 
@@ -37,7 +38,7 @@ hidden_size = 1  # output from the LSTM. 5 to directly predict one-hot
 batch_size = 1   # one sentence
 sequence_length = 4404  # |ihello| == 6
 num_layers = 1  # one-layer rnn
-
+THRESHOLD = 0.5
 
 class RNNClassifier(nn.Module):
     # Our model
@@ -51,7 +52,7 @@ class RNNClassifier(nn.Module):
         #self.embedding = nn.Embedding(input_size, hidden_size)
         #self.rnn = nn.RNN(input_size=input_size,
         #                  hidden_size=hidden_size, batch_first=True)
-        self.gru = nn.GRU(input_size, hidden_size, n_layers, batch_first=True, 
+        self.gru = nn.GRU(input_size, hidden_size, n_layers, batch_first=True,
                           bidirectional=bidirectional)
         self.fc = nn.Linear(hidden_size, output_size)
         #self.soft = nn.Softmax()
@@ -63,9 +64,8 @@ class RNNClassifier(nn.Module):
         #input = input.t()
         #batch_size = input.size(1)
         batch_size = input.size(0)
-        seq_len = input.size(1)
-        
-        print "Seq Len : {} :: Batch size : {}".format(seq_len, batch_size)
+        seq_len = input.size(1)        
+        #print "Seq Len : {} :: Batch size : {}".format(seq_len, batch_size)
 
         # Make a hidden
         hidden = self._init_hidden(batch_size)
@@ -86,7 +86,7 @@ class RNNClassifier(nn.Module):
 
         # Use the last layer output as FC's input
         # No need to unpack, since we are going to use hidden
-        return self.fc(output.contiguous().view(-1, self.hidden_size))        
+        return self.fc(output.contiguous().view(-1, self.hidden_size))
         #fc_output = self.fc(hidden[-1])
         #return fc_output
 
@@ -130,10 +130,10 @@ class RNNClassifier(nn.Module):
 
 def create_variable(tensor):
     # Do cuda() before wrapping with variable
-    if torch.cuda.is_available():
-        return Variable(tensor.cuda())
-    else:
-        return Variable(tensor)
+#    if torch.cuda.is_available():
+#        return Variable(tensor.cuda())
+#    else:
+    return Variable(tensor)
 
 # Split the dataset files into training, validation and test sets
 def split_dataset_files():
@@ -142,104 +142,103 @@ def split_dataset_files():
     filenames = [t.split('.')[0] for t in filenames]   # remove the extension
     return filenames[:16], filenames[16:21], filenames[21:]
     
-    
 # function to extract the features from a list of videos
 # Params: vids_lst = list of videos for which hist_diff values are to be extracted
 # Return: hist_diff_all = f values of histogram diff each (256 X C) (f is no of frames)
-def extract_hist_diff_vids(vids_lst, color=('g'), bins=256):
-    # iterate over the videos to extract the hist_diff values
-    hist_diff_all = []
-    for idx, vid in enumerate(vids_lst):
-        #get_hist_diff(os.path.join(DATASET, vid+'.avi'))
-        diffs = getHistogramOfVideo(os.path.join(DATASET, vid+'.avi'), color, bins)
-        #print "diffs : ",diffs
-        print "Done : " + str(idx+1)
-        hist_diff_all.append(diffs)
-        # save diff_hist to disk    
-        #outfile = file(os.path.join(destPath,"diff_hist.bin"), "wb")
-        #np.save(outfile, diffs)
-        #outfile.close()    
-        #break
-    return hist_diff_all
+#def extract_hist_diff_vids(vids_lst, color=('g'), bins=256):
+#    # iterate over the videos to extract the hist_diff values
+#    hist_diff_all = []
+#    for idx, vid in enumerate(vids_lst):
+#        #get_hist_diff(os.path.join(DATASET, vid+'.avi'))
+#        diffs = getHistogramOfVideo(os.path.join(DATASET, vid+'.avi'), color, bins)
+#        #print "diffs : ",diffs
+#        print "Done : " + str(idx+1)
+#        hist_diff_all.append(diffs)
+#        # save diff_hist to disk    
+#        #outfile = file(os.path.join(destPath,"diff_hist.bin"), "wb")
+#        #np.save(outfile, diffs)
+#        #outfile.close()    
+#        #break
+#    return hist_diff_all
 
 # function to get the L1 distances of histograms and plot the signal
 # for getting the grayscale histogram differences, uncomment two lines
 # Copied and editted from shot_detection.py script
 # color=('g') for Grayscale histograms, color=('b','g','r') for RGB 
-def getHistogramOfVideo(srcVideoPath, color=('g'), N=256):
-    # get the VideoCapture object
-    cap = cv2.VideoCapture(srcVideoPath)
-    
-    # if the videoCapture object is not opened then exit without traceback
-    if not cap.isOpened():
-        import sys
-        print("Error reading the video file !!")
-        sys.exit(0)
-
-#    # create destination folder if not created already
-#    if not os.path.exists(destPath):
-#        os.makedirs(destPath)
-    
-    dimensions = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    #fourcc = cv2.cv.CV_FOURCC(*'XVID')
-    #out = cv2.VideoWriter('outputImran.avi', fourcc, fps, dimensions, True)
-    #print(out)
-    frameCount = 0
-    #color = ('b', 'g', 'r')     # defined for 3 channels
-    prev_hist = np.zeros((N, len(color)))
-    curr_hist = np.zeros((N, len(color)))
-    diffs = np.zeros((1, len(color)))
-    while(cap.isOpened()):
-        # Capture frame by frame
-        ret, frame = cap.read()
-        # print(ret)
-    
-        if ret==True:
-            # frame = cv2.flip(frame)
-            frameCount = frameCount + 1
-            
-            # Check for grayscale
-            if len(color)==1:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            for i,col in enumerate(color):
-                # cv2.calcHist(images, channels, mask, histSize, ranges[, hist[, accumulate]])
-                curr_hist[:,i] = np.reshape(cv2.calcHist([frame], [i], None, [N], [0,N]), (N,))
-            
-            if frameCount > 1:
-                # find the L1 distance of the current frame hist to previous frame hist 
-                dist = np.sum(abs(curr_hist - prev_hist), axis=0)
-                #diffs.append(dist)
-                diffs = np.vstack([diffs, dist])
-                #print("dist = ", type(dist), dist)           
-                #print("diffs = ", type(diffs), diffs.shape)
-                #waitTillEscPressed()
-            np.copyto(prev_hist, curr_hist)        
-            
-            ### write the flipped frame
-            ###out.write(frame)
-            ### write frame to file
-            ## Uncomment following 3 lines to get the images of the video saved to dir
-            #filename = os.path.join(destPath,'f'+str(frameCount)+'.jpg')
-            #cv2.imwrite(filename, frame)
-            #print('Frame written', frameCount)
-            #cv2.imshow('frame', frame)
-            # Our operations on the frame come here
-            # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            # Display the resulting frame
-            # cv2.imshow('frame', gray)
-            #if cv2.waitKey(10) == 27:
-            #    print('Esc pressed')
-            #    break
-            
-        else:
-            break
-
-    # When everything done, release the capture
-    cap.release()
-    return diffs
+#def getHistogramOfVideo(srcVideoPath, color=('g'), N=256):
+#    # get the VideoCapture object
+#    cap = cv2.VideoCapture(srcVideoPath)
+#    
+#    # if the videoCapture object is not opened then exit without traceback
+#    if not cap.isOpened():
+#        import sys
+#        print("Error reading the video file !!")
+#        sys.exit(0)
+#
+##    # create destination folder if not created already
+##    if not os.path.exists(destPath):
+##        os.makedirs(destPath)
+#    
+#    dimensions = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+#    fps = cap.get(cv2.CAP_PROP_FPS)
+#    #fourcc = cv2.cv.CV_FOURCC(*'XVID')
+#    #out = cv2.VideoWriter('outputImran.avi', fourcc, fps, dimensions, True)
+#    #print(out)
+#    frameCount = 0
+#    #color = ('b', 'g', 'r')     # defined for 3 channels
+#    prev_hist = np.zeros((N, len(color)))
+#    curr_hist = np.zeros((N, len(color)))
+#    diffs = np.zeros((1, len(color)))
+#    while(cap.isOpened()):
+#        # Capture frame by frame
+#        ret, frame = cap.read()
+#        # print(ret)
+#    
+#        if ret==True:
+#            # frame = cv2.flip(frame)
+#            frameCount = frameCount + 1
+#            
+#            # Check for grayscale
+#            if len(color)==1:
+#                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#            
+#            for i,col in enumerate(color):
+#                # cv2.calcHist(images, channels, mask, histSize, ranges[, hist[, accumulate]])
+#                curr_hist[:,i] = np.reshape(cv2.calcHist([frame], [i], None, [N], [0,N]), (N,))
+#            
+#            if frameCount > 1:
+#                # find the L1 distance of the current frame hist to previous frame hist 
+#                dist = np.sum(abs(curr_hist - prev_hist), axis=0)
+#                #diffs.append(dist)
+#                diffs = np.vstack([diffs, dist])
+#                #print("dist = ", type(dist), dist)           
+#                #print("diffs = ", type(diffs), diffs.shape)
+#                #waitTillEscPressed()
+#            np.copyto(prev_hist, curr_hist)        
+#            
+#            ### write the flipped frame
+#            ###out.write(frame)
+#            ### write frame to file
+#            ## Uncomment following 3 lines to get the images of the video saved to dir
+#            #filename = os.path.join(destPath,'f'+str(frameCount)+'.jpg')
+#            #cv2.imwrite(filename, frame)
+#            #print('Frame written', frameCount)
+#            #cv2.imshow('frame', frame)
+#            # Our operations on the frame come here
+#            # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#            
+#            # Display the resulting frame
+#            # cv2.imshow('frame', gray)
+#            #if cv2.waitKey(10) == 27:
+#            #    print('Esc pressed')
+#            #    break
+#            
+#        else:
+#            break
+#
+#    # When everything done, release the capture
+#    cap.release()
+#    return diffs
 
 
 def train_model(model, destpath):
@@ -258,61 +257,6 @@ def extract_hog_from_video(srcVid):
     seq = 0
     return seq
 
-
-## Visualize the positive and negative samples
-## Params: list of numpy arrays of size nFrames-1 x Channels
-#def visualize_feature(samples_lst, title="Histogram", bins=300):
-#    
-#    if len(samples_lst) == 1:
-#        print "Cannot Visualize !! Only single numpy array in list !!"
-#        return
-#    elif len(samples_lst) > 1:
-#        sample = np.vstack((samples_lst[0], samples_lst[1]))
-#    
-#    # Iterate over the list to vstack those and get a single matrix
-#    for idx in range(2, len(samples_lst)):
-#        sample = np.vstack((sample, samples_lst[idx]))
-#        
-#    vals = list(sample.reshape(sample.shape[0]))
-#    
-#    plt.hist(vals, normed=True, bins=bins)
-#    plt.title(title)
-#    plt.xlabel("Bins")
-#    plt.ylabel("Frequency")
-
-    
-## calculate the precision, recall and f-measure for the validation of test set
-## params: preds_dict: {"vid_name": [98, 138, ...], ...}
-#def  calculate_accuracy(preds_dict, split = "val"):
-#    # calculate metrics
-#    Nt = 0      # Total no of transitions
-#    Nc = 0      # No of correctly predicted transitions
-#    Nd = 0      # No of deletions, not identified as cut
-#    Ni = 0      # No of insertions, falsely identified as cut
-#    # Iterate over the xml files (keys of preds_dict) and corresponding gt xml
-#    # Calculate the metrics as defined and return the recall, precision and f-measure
-#    for i,fname in enumerate(preds_dict.keys()):
-#        gt_list = lab_xml.get_cuts_list_from_xml(os.path.join(LABELS, 'gt_'+fname+'.xml'))
-#        test_list = preds_dict[fname]
-#
-#        # Calculate Nt, Nc, Nd, Ni
-#        Nt = Nt + len(set(gt_list))
-#        Nd = Nd + len(set(gt_list) - set(test_list))
-#        Ni = Ni + len(set(test_list) - set(gt_list))
-#        Nc = Nc + len(set(gt_list).intersection(set(test_list)))
-#        
-#        print gt_list
-#        print test_list        
-#        print "Nt = "+str(Nt)
-#        print "Nc = "+str(Nc)
-#        print "Nd = "+str(Nd)
-#        print "Ni = "+str(Ni)
-#        
-#    # calculate the recall and precision values
-#    recall = (Nc / (float)(Nc + Nd))
-#    precision = (Nc / (float)(Nc + Ni))
-#    f_measure = 2*precision*recall/(precision+recall)
-#    return [recall, precision, f_measure]
 
 # function to predict the cuts on the validation or test videos
 def make_predictions(vids_lst, model, color, bins, split = "val"):
@@ -424,6 +368,79 @@ def getFeatureVectors(datasetpath, videoFiles, sequences):
         
     return batch_feats
     
+def readAllOFfeatures(OFfeaturesPath, keys):
+    """
+    Load the features of the train/val/test set into a dictionary
+    Dictionary has key as the filename of video and value as the numpy feature 
+    matrix
+    """
+    feats = {}
+    for k in keys:
+        featpath = os.path.join(OFfeaturesPath, k.rsplit('.', 1)[0])+".bin"
+        with open(featpath, "rb") as fobj:
+            feats[k] = np.load(fobj)
+            
+    print "Features loaded into dictionary ..."
+    return feats
+        
+    
+
+def getFeatureVectorsFromDump(OFfeatures, videoFiles, sequences):
+    """Pass a dictionary of features {vidname: numpy matrix, ...}, videoFiles
+    is the list of filenames for a batch, sequences is the start and end frame numbers
+    in the batch videos to be sampled.
+    """
+    #grid_size = 20
+    batch_feats = []
+    # Iterate over the videoFiles in the batch and extract the corresponding feature
+    for i, videoFile in enumerate(videoFiles):
+        videoFile = videoFile.split('/')[1]
+        vid_feat_seq = []
+        # use capture object to get the sequences
+        cap = cv2.VideoCapture(os.path.join(datasetpath, videoFile))
+        if not cap.isOpened():
+            print "Capture object not opened : {}".format(videoFile)
+            import sys
+            sys.exit(0)
+            
+        start_frame = sequences[0][i]
+        end_frame = sequences[1][i]
+        ####################################################    
+        #print "Start Times : {} :: End Times : {}".format(start_frame, end_frame)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        ret, prev_frame = cap.read()
+        if ret:
+            # convert frame to GRAYSCALE
+            prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+        else:
+            print "Frame not read: {} : {}".format(videoFile, start_frame)
+
+        for stime in range(start_frame+1, end_frame+1):
+            ret, frame = cap.read()
+            if not ret:
+                print "Frame not read : {} : {}".format(videoFile, stime)
+                continue
+            
+            curr_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            #cv2.calcOpticalFlowFarneback(prev, next, pyr_scale, levels, winsize, 
+            #                iterations, poly_n, poly_sigma, flags[, flow])
+            # prev(y,x)~next(y+flow(y,x)[1], x+flow(y,x)[0])
+            flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            #print "For frames: ("+str(stime-1)+","+str(stime)+") :: shape : "+str(flow.shape)
+            
+            mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
+            # stack sliced arrays along the first axis (2, 12, 16)
+            sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
+                                    ang[::grid_size, ::grid_size]), axis=0)
+            sliced_flow = sliced_flow.ravel()   # flatten
+            vid_feat_seq.append(sliced_flow.tolist())    # append to list
+            prev_frame = curr_frame
+        cap.release()            
+        batch_feats.append(vid_feat_seq)
+        
+    return batch_feats
+
 
 ## Train cycle
 #def train(train_loader):
@@ -500,6 +517,13 @@ def make_variables(feats, labels):
     # Form a wrap into a tensor variable as B X S X I
     return create_variable(feats), create_variable(torch.Tensor(target))
 
+def save_checkpoint(state, is_best, save_path, filename):
+    filename = os.path.join(save_path, filename)
+    torch.save(state, filename)
+    if is_best:
+        bestname = os.path.join(save_path, 'model_best.pth.tar')
+        shutil.copyfile(filename, bestname)
+        
 
 if __name__=="__main__":
     # Divide the samples files into training set, validation and test sets
@@ -509,9 +533,10 @@ if __name__=="__main__":
     # specifiy for grayscale or BGR values
     color = ('g')
     bins = 256      # No of bins in the historgam
+    gridSize = 20
     
     # Extract the histogram difference features from the training set
-    hist_diffs_train = extract_hist_diff_vids(train_lst[:1], color, bins)
+    #hist_diffs_train = extract_hist_diff_vids(train_lst[:1], color, bins)
     
     train_lab = [f+".json" for f in train_lst]
     val_lab = [f+".json" for f in val_lst]
@@ -522,9 +547,24 @@ if __name__=="__main__":
     tr_labs = [os.path.join(LABELS, f) for f in train_lab]
     sizes = [getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
     print "Size : {}".format(sizes)
-    from Video_Dataset import VideoDataset
     hlDataset = VideoDataset(tr_labs, sizes, is_train_set = True)
-    print hlDataset.__len__
+    print hlDataset.__len__()
+    
+    #####################################################################
+    # Run extract_denseOF_par.py before executing this file, using same grid_size
+    # Features already extracted and dumped to disk 
+    # Read those features using the given path and grid size
+    OFfeaturesPath = os.path.join(os.getcwd(),"OF_grid"+str(gridSize))
+    
+    # Uncomment the lines below to extract features for a different gridSize
+#    from extract_denseOF_par import extract_dense_OF_vids
+#    start = time.time()
+#    extract_dense_OF_vids(DATASET, OFfeaturesPath, grid_size=gridSize, stop='all')
+#    end = time.time()
+#    print "Total execution time : "+str(end-start)
+    
+    #####################################################################
+    
     
     # Parameters and DataLoaders
     HIDDEN_SIZE = 100
@@ -540,17 +580,17 @@ if __name__=="__main__":
     #N_COUNTRIES = len(train_dataset.get_countries())
         
     classifier = RNNClassifier(N_CHARS, HIDDEN_SIZE, 1, N_LAYERS)
-    if torch.cuda.device_count() > 1:
-        print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
-        classifier = nn.DataParallel(classifier)
-
-    if torch.cuda.is_available():
-        classifier.cuda()
+#    if torch.cuda.device_count() > 1:
+#        print("Let's use", torch.cuda.device_count(), "GPUs!")
+#        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
+#        classifier = nn.DataParallel(classifier)
+#
+#    if torch.cuda.is_available():
+#        classifier.cuda()
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     #criterion = nn.CrossEntropyLoss()
-    m = nn.Sigmoid()
+    sigm = nn.Sigmoid()
     criterion = nn.BCELoss()
 
     start = time.time()
@@ -561,34 +601,117 @@ if __name__=="__main__":
     train_loader = DataLoader(dataset=hlDataset, batch_size=BATCH_SIZE, shuffle=True)
 
     print(len(train_loader.dataset))
-    for epoch in range(2):
+    for epoch in range(10):
         total_loss = 0
         for i, (keys, seqs, labels) in enumerate(train_loader):
             # Run your training process
-            print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
-            feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
+            #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
+            #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
+            feats = getFeatureVectorsFromDump(OFfeaturesPath, keys, seqs)
             #break
 
             # Training starts here
             inputs, target = make_variables(feats, labels)
             output = classifier(inputs)
 
-            loss = criterion(m(output.view(output.size(0))), target)
+            loss = criterion(sigm(output.view(output.size(0))), target)
             total_loss += loss.data[0]
 
             classifier.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if i % 10 == 0:
+            if i % 2 == 0:
                 print('Train Epoch: {} :: Loss: {:.2f}'.format(epoch, total_loss))
+            if (i+1) % 10 == 0:
+                break
     
+    
+    # Save only the model params
+    torch.save(classifier.state_dict(), "gru_100_epoch10_BCE_temp.pt")
+    
+    # To load the params into model
+    #the_model = RNNClassifier(N_CHARS, HIDDEN_SIZE, 1, N_LAYERS)
+    #the_model.load_state_dict(torch.load("gru_100_epoch10_BCE.pt"))
+    
+    classifier.load_state_dict(torch.load("gru_100_epoch10_BCE_temp.pt"))
+    
+#    save_checkpoint({
+#            'epoch': epoch + 1,
+#            'arch': args.arch,
+#            'state_dict': classifier.state_dict(),
+#            'best_prec1': best_prec1,
+#            'optimizer' : optimizer.state_dict(),
+#        }, is_best)
+#    #####################################################################
+#    
+#    # Loading and resuming from dictionary
+#    # Refer : https://github.com/pytorch/examples/blob/master/imagenet/main.py#L139
+#    if args.resume:
+#        if os.path.isfile(args.resume):
+#            print("=> loading checkpoint '{}'".format(args.resume))
+#            checkpoint = torch.load(args.resume)
+#            args.start_epoch = checkpoint['epoch']
+#            best_prec1 = checkpoint['best_prec1']
+#            model.load_state_dict(checkpoint['state_dict'])
+#            optimizer.load_state_dict(checkpoint['optimizer'])
+#            print("=> loaded checkpoint '{}' (epoch {})"
+#                  .format(args.resume, checkpoint['epoch']))
+#        else:
+#            print("=> no checkpoint found at '{}'".format(args.resume))
+            
     #####################################################################
     
-    #    # Prepare the RNN 
-##    # Instantiate RNN model
-#    rnn = RNN(num_classes, input_size, hidden_size, num_layers)
-#    print(rnn)
+    # Test a video or calculate the accuracy using the learned model
+    val_labs = [os.path.join(LABELS, f) for f in val_lab]
+    val_sizes = [getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
+    print "Size : {}".format(val_sizes)
+    hlvalDataset = VideoDataset(val_labs, val_sizes, is_train_set = False)
+    print hlvalDataset.__len__()
+    
+    # Create a DataLoader object and sample batches of examples. 
+    # These batch samples are used to extract the features from videos parallely
+    val_loader = DataLoader(dataset=hlvalDataset, batch_size=BATCH_SIZE, shuffle=False)
+    print(len(val_loader.dataset))
+    correct = 0
+    val_keys = []
+    predictions = []
+    
+    for i, (keys, seqs, labels) in enumerate(val_loader):
+        
+        # Testing on the sample
+        feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
+        #break
+        # Validation stage
+        inputs, target = make_variables(feats, labels)
+        output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
+
+        #pred = output.data.max(1, keepdim=True)[1]  # get max value in each row
+        pred_probs = sigm(output.view(output.size(0))).data  # get the normalized values (0-1)
+        #preds = pred_probs > THRESHOLD  # ByteTensor
+        #correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        val_keys.append(keys)
+        predictions.append(pred_probs)  # append the 
+        
+        
+        #loss = criterion(m(output.view(output.size(0))), target)
+        #total_loss += loss.data[0]
+
+        if i % 2 == 0:
+            print('i: {} :: Val keys: {} : seqs : {}'.format(i, keys, seqs)) #keys, pred_probs))
+        #if (i+1) % 10 == 0:
+        #    break
+    
+#    
+#    for names, countries in test_loader:
+#        input, seq_lengths, target = make_variables(names, countries)
+#        output = classifier(input, seq_lengths)
+#        pred = output.data.max(1, keepdim=True)[1]
+        
+    #####################################################################
+    
+    
+    
 #    
 #    # Set loss and optimizer function
 #    # CrossEntropyLoss = LogSoftmax + NLLLoss
@@ -692,5 +815,3 @@ if __name__=="__main__":
 #    
 #    # 
 #    
-
-    
