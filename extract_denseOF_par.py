@@ -17,6 +17,7 @@ import numpy as np
 import cv2
 import time
 import pandas as pd
+import pickle
 from joblib import Parallel, delayed
     
 # function to extract the features from a list of videos
@@ -72,9 +73,8 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
         # Writing the diffs in a serial manner
         for j in range(batch):
             if batch_diffs[j] is not None:
-                outfile = file(filenames_df['outfiles'][i*batch+j] , "wb")
-                np.save(outfile, batch_diffs[j])
-                outfile.close()
+                with open(filenames_df['outfiles'][i*batch+j] , "wb") as fp:
+                    pickle.dump(batch_diffs[j], fp)
                 print "Written "+str(i*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][i*batch+j]
             
@@ -87,9 +87,8 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
         # Writing the diffs in a serial manner
         for j in range(last_batch_size):
             if batch_diffs[j] is not None:
-                outfile = file(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb")
-                np.save(outfile, batch_diffs[j])
-                outfile.close()
+                with open(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb") as fp:
+                    pickle.dump(batch_diffs[j], fp)
                 print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][(nrows/batch)*batch+j]
     
@@ -155,11 +154,11 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
         # stack sliced arrays along the first axis (2, (360/grid), (640/grid))
         sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
                                 ang[::grid_size, ::grid_size]), axis=0)
-        
+
         #feature.append(sliced_flow[..., 0].ravel())
         #feature.append(sliced_flow[..., 1].ravel())
-        #feature = np.array(feature)
-        features_current_file.append(sliced_flow)
+        # saving as a list of float values (after converting into 1D array)
+        features_current_file.append(sliced_flow.ravel().tolist())
         prev_frame = curr_frame
 
     # When everything done, release the capture

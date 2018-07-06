@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 #import matplotlib.pyplot as plt
-import pandas as pd
+import pickle
 import time
 import shutil
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -370,15 +370,15 @@ def getFeatureVectors(datasetpath, videoFiles, sequences):
     
 def readAllOFfeatures(OFfeaturesPath, keys):
     """
-    Load the features of the train/val/test set into a dictionary
-    Dictionary has key as the filename of video and value as the numpy feature 
-    matrix
+    Load the features of the train/val/test set into a dictionary. Dictionary 
+    has key as the filename(without ext) of video and value as the numpy feature 
+    matrix.
     """
     feats = {}
     for k in keys:
-        featpath = os.path.join(OFfeaturesPath, k.rsplit('.', 1)[0])+".bin"
+        featpath = os.path.join(OFfeaturesPath, k)+".bin"
         with open(featpath, "rb") as fobj:
-            feats[k] = np.load(fobj)
+            feats[k] = pickle.load(fobj)
             
     print "Features loaded into dictionary ..."
     return feats
@@ -394,49 +394,45 @@ def getFeatureVectorsFromDump(OFfeatures, videoFiles, sequences):
     batch_feats = []
     # Iterate over the videoFiles in the batch and extract the corresponding feature
     for i, videoFile in enumerate(videoFiles):
-        videoFile = videoFile.split('/')[1]
-        vid_feat_seq = []
+        videoFile = videoFile.split('/')[1].rsplit('.', 1)[0]
+        #vid_feat_seq = []
         # use capture object to get the sequences
-        cap = cv2.VideoCapture(os.path.join(datasetpath, videoFile))
-        if not cap.isOpened():
-            print "Capture object not opened : {}".format(videoFile)
-            import sys
-            sys.exit(0)
+        #cap = cv2.VideoCapture(os.path.join(datasetpath, videoFile))
+        #if not cap.isOpened():
+        #    print "Capture object not opened : {}".format(videoFile)
+        #    import sys
+        #    sys.exit(0)
             
         start_frame = sequences[0][i]
         end_frame = sequences[1][i]
         ####################################################    
-        #print "Start Times : {} :: End Times : {}".format(start_frame, end_frame)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        ret, prev_frame = cap.read()
-        if ret:
-            # convert frame to GRAYSCALE
-            prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-        else:
-            print "Frame not read: {} : {}".format(videoFile, start_frame)
-
-        for stime in range(start_frame+1, end_frame+1):
-            ret, frame = cap.read()
-            if not ret:
-                print "Frame not read : {} : {}".format(videoFile, stime)
-                continue
-            
-            curr_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            #cv2.calcOpticalFlowFarneback(prev, next, pyr_scale, levels, winsize, 
-            #                iterations, poly_n, poly_sigma, flags[, flow])
-            # prev(y,x)~next(y+flow(y,x)[1], x+flow(y,x)[0])
-            flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            #print "For frames: ("+str(stime-1)+","+str(stime)+") :: shape : "+str(flow.shape)
-            
-            mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
-            # stack sliced arrays along the first axis (2, 12, 16)
-            sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
-                                    ang[::grid_size, ::grid_size]), axis=0)
-            sliced_flow = sliced_flow.ravel()   # flatten
-            vid_feat_seq.append(sliced_flow.tolist())    # append to list
-            prev_frame = curr_frame
-        cap.release()            
+        # Load features
+        # (N-1) sized list of vectors of 1152 dim
+        vidFeats = OFfeatures[videoFile]  
+        vid_feat_seq = vidFeats[start_frame:end_frame]
+        
+        #for stime in range(start_frame, end_frame):
+        #    #ret, frame = cap.read()
+        #    #if not ret:
+        #    #    print "Frame not read : {} : {}".format(videoFile, stime)
+        #    #    continue
+        #    
+        #    #curr_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        #    
+        #    #cv2.calcOpticalFlowFarneback(prev, next, pyr_scale, levels, winsize, 
+        #    #                iterations, poly_n, poly_sigma, flags[, flow])
+        #    # prev(y,x)~next(y+flow(y,x)[1], x+flow(y,x)[0])
+        #    flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        #    #print "For frames: ("+str(stime-1)+","+str(stime)+") :: shape : "+str(flow.shape)
+        #    
+        #    mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
+        #    # stack sliced arrays along the first axis (2, 12, 16)
+        #    sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
+        #                            ang[::grid_size, ::grid_size]), axis=0)
+        #    sliced_flow = sliced_flow.ravel()   # flatten
+        #    vid_feat_seq.append(sliced_flow.tolist())    # append to list
+        #    prev_frame = curr_frame
+        #cap.release()            
         batch_feats.append(vid_feat_seq)
         
     return batch_feats
@@ -523,7 +519,41 @@ def save_checkpoint(state, is_best, save_path, filename):
     if is_best:
         bestname = os.path.join(save_path, 'model_best.pth.tar')
         shutil.copyfile(filename, bestname)
-        
+
+
+# function to remove the action segments that have less than "epsilon" frames.
+def filter_action_segments(shots_dict, epsilon=10):
+    filtered_shots = {}
+    for k,v in shots_dict.iteritems():
+        vsegs = []
+        for segment in v:
+            if (segment[1]-segment[0] >= epsilon):
+                vsegs.append(segment)
+        filtered_shots[k] = vsegs
+    return filtered_shots
+
+# function to remove the non-action segments that have less than "epsilon" frames.
+# Here we need to merge one or more action segments
+def filter_non_action_segments(shots_dict, epsilon=10):
+    filtered_shots = {}
+    for k,v in shots_dict.iteritems():
+        vsegs = []
+        isFirstSeg = True
+        for segment in v:
+            if isFirstSeg:
+                prev_st, prev_end = segment
+                isFirstSeg = False
+                continue
+            if (segment[0] - prev_end) <= epsilon:
+                prev_end = segment[1]   # new end of segment
+            else:       # Append to list
+                vsegs.append((prev_st, prev_end))
+                prev_st, prev_end = segment     
+        # For last segment
+        if len(v) > 0:      # For last segment
+            vsegs.append((prev_st, prev_end))
+        filtered_shots[k] = vsegs
+    return filtered_shots
 
 if __name__=="__main__":
     # Divide the samples files into training set, validation and test sets
@@ -600,35 +630,37 @@ if __name__=="__main__":
     # These batch samples are used to extract the features from videos parallely
     train_loader = DataLoader(dataset=hlDataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    print(len(train_loader.dataset))
-    for epoch in range(10):
-        total_loss = 0
-        for i, (keys, seqs, labels) in enumerate(train_loader):
-            # Run your training process
-            #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
-            #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
-            feats = getFeatureVectorsFromDump(OFfeaturesPath, keys, seqs)
-            #break
-
-            # Training starts here
-            inputs, target = make_variables(feats, labels)
-            output = classifier(inputs)
-
-            loss = criterion(sigm(output.view(output.size(0))), target)
-            total_loss += loss.data[0]
-
-            classifier.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            if i % 2 == 0:
-                print('Train Epoch: {} :: Loss: {:.2f}'.format(epoch, total_loss))
-            if (i+1) % 10 == 0:
-                break
+#    # read into dictionary {vidname: np array, ...}
+#    OFfeatures = readAllOFfeatures(OFfeaturesPath, train_lst)
+#    print(len(train_loader.dataset))
+#    for epoch in range(10):
+#        total_loss = 0
+#        for i, (keys, seqs, labels) in enumerate(train_loader):
+#            # Run your training process
+#            #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
+#            #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
+#            batchFeats = getFeatureVectorsFromDump(OFfeatures, keys, seqs)
+#            #break
+#
+#            # Training starts here
+#            inputs, target = make_variables(batchFeats, labels)
+#            output = classifier(inputs)
+#
+#            loss = criterion(sigm(output.view(output.size(0))), target)
+#            total_loss += loss.data[0]
+#
+#            classifier.zero_grad()
+#            loss.backward()
+#            optimizer.step()
+#
+#            if i % 2 == 0:
+#                print('Train Epoch: {} :: Loss: {:.2f}'.format(epoch, total_loss))
+#            if (i+1) % 10 == 0:
+#                break
     
     
     # Save only the model params
-    torch.save(classifier.state_dict(), "gru_100_epoch10_BCE_temp.pt")
+    #torch.save(classifier.state_dict(), "gru_100_epoch10_BCE_temp.pt")
     
     # To load the params into model
     #the_model = RNNClassifier(N_CHARS, HIDDEN_SIZE, 1, N_LAYERS)
@@ -676,31 +708,32 @@ if __name__=="__main__":
     correct = 0
     val_keys = []
     predictions = []
-    
-    for i, (keys, seqs, labels) in enumerate(val_loader):
-        
-        # Testing on the sample
-        feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
-        #break
-        # Validation stage
-        inputs, target = make_variables(feats, labels)
-        output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
-
-        #pred = output.data.max(1, keepdim=True)[1]  # get max value in each row
-        pred_probs = sigm(output.view(output.size(0))).data  # get the normalized values (0-1)
-        #preds = pred_probs > THRESHOLD  # ByteTensor
-        #correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-        val_keys.append(keys)
-        predictions.append(pred_probs)  # append the 
-        
-        
-        #loss = criterion(m(output.view(output.size(0))), target)
-        #total_loss += loss.data[0]
-
-        if i % 2 == 0:
-            print('i: {} :: Val keys: {} : seqs : {}'.format(i, keys, seqs)) #keys, pred_probs))
-        #if (i+1) % 10 == 0:
-        #    break
+#    OFValFeatures = readAllOFfeatures(OFfeaturesPath, val_lst)
+#    for i, (keys, seqs, labels) in enumerate(val_loader):
+#        
+#        # Testing on the sample
+#        #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
+#        batchFeats = getFeatureVectorsFromDump(OFValFeatures, keys, seqs)
+#        #break
+#        # Validation stage
+#        inputs, target = make_variables(batchFeats, labels)
+#        output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
+#
+#        #pred = output.data.max(1, keepdim=True)[1]  # get max value in each row
+#        pred_probs = sigm(output.view(output.size(0))).data  # get the normalized values (0-1)
+#        #preds = pred_probs > THRESHOLD  # ByteTensor
+#        #correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+#        val_keys.append(keys)
+#        predictions.append(pred_probs)  # append the 
+#        
+#        
+#        #loss = criterion(m(output.view(output.size(0))), target)
+#        #total_loss += loss.data[0]
+#
+#        if i % 2 == 0:
+#            print('i: {} :: Val keys: {} : seqs : {}'.format(i, keys, seqs)) #keys, pred_probs))
+#        #if (i+1) % 10 == 0:
+#        #    break
     
 #    
 #    for names, countries in test_loader:
@@ -710,27 +743,54 @@ if __name__=="__main__":
         
     #####################################################################
     
+#    with open("predictions.pkl", "wb") as fp:
+#        pickle.dump(predictions, fp)
+#    
+#    with open("val_keys.pkl", "wb") as fp:
+#        pickle.dump(val_keys, fp)
+#    
+    with open("predictions.pkl", "rb") as fp:
+        predictions = pickle.load(fp)
     
+    with open("val_keys.pkl", "rb") as fp:
+        val_keys = pickle.load(fp)
     
+    from get_localizations import getLocalizations
+    from get_localizations import getVidLocalizations
+    threshold = 0.5
+    seq_threshold = 0.5
+    # [4949, 4369, 4455, 4317, 4452]
+    localization_dict = getLocalizations(val_keys, predictions, BATCH_SIZE, \
+                                         threshold, seq_threshold)
+
+    print localization_dict
+    
+    import json
+#    with open("predicted_localizations_th0_5.json", "w") as fp:
+#        json.dump(localization_dict, fp)
+
+        
+#    for i in range(0,101,10):
+#        filtered_shots = filter_action_segments(localization_dict, epsilon=i)
+#        filt_shots_filename = "predicted_localizations_th0_5_filt"+str(i)+".json"
+#        with open(filt_shots_filename, 'w') as fp:
+#            json.dump(filtered_shots, fp)
+
+    
+    i = 60  # optimum
+    filtered_shots = filter_action_segments(localization_dict, epsilon=i)
+    #i = 7  # optimum
+    #filtered_shots = filter_non_action_segments(filtered_shots, epsilon=i)
+    filt_shots_filename = "predicted_localizations_th0_5_filt"+str(i)+".json"
+    with open(filt_shots_filename, 'w') as fp:
+        json.dump(filtered_shots, fp)
+
+    #####################################################################
 #    
 #    # Set loss and optimizer function
 #    # CrossEntropyLoss = LogSoftmax + NLLLoss
 #    criterion = torch.nn.CrossEntropyLoss()
 #    optimizer = torch.optim.Adam(rnn.parameters(), lr=0.1)
-#    
-#    # Train the model
-#    for epoch in range(10):
-#        outputs = rnn(inputs)
-#        optimizer.zero_grad()
-#        loss = criterion(outputs, labels)
-#        loss.backward()
-#        optimizer.step()
-#        _, idx = outputs.max(1)
-#        idx = idx.data.numpy()
-#        #result_str = [idx2char[c] for c in idx.squeeze()]
-#        
-#        print("epoch: %d, loss: %1.3f" % (epoch + 1, loss.data[0]))
-#        #print("Predicted string: ", ''.join(idx))
 #    
 #    print("Learning finished!")    
 
@@ -744,8 +804,7 @@ if __name__=="__main__":
 #    
 #    pos_samples = []
 #    neg_samples = []
-#    
-#    #idx2char = ['h', 'i', 'e', 'l', 'o']
+
 #    
 #    x_data = hist_diffs_train[0]    # 4404 x 1
 #    
@@ -781,18 +840,6 @@ if __name__=="__main__":
 #    # How to handle testing set feature. A single false +ve will screw up the subsequent 
 #    # predictions.
 #    
-#    #######################################################
-#    
-#    # Extend 2: Experiment with Random Forests, decision trees and Bayesian Inf
-#    #
-#    
-#    #######################################################
-#    
-#    # Extend 3 : Learn a CNN architecture
-#    
-#    #######################################################
-#    
-#    # Extend 4 : Learn an RNN by extracting features 
 #
 #    #extract_features()
 #    # create a model 
@@ -808,10 +855,4 @@ if __name__=="__main__":
 #    #params = sum([np.prod(p.size()) for p in model_parameters])
 #    # or call count_paramters(model)  
 #    #print "#Parameters : {} ".format(count_parameters(model))
-#    
-#    # Creation of a training set, validation set, test set meta info file.
-#    
-#    # Train the model
-#    
-#    # 
 #    
