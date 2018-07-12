@@ -2,14 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat June 30 01:34:25 2018
-
 @author: Arpan
-
-@Description: Utils file to extract Farneback dense optical flow features 
-from folder videos and dump to disk.
-
-Feature : Farneback Dense Optical Flow: Magnitudes and Angles (with grid_size)
-
+@Description: Utils file to extract HOG features from folder videos and dump 
+to disk.
+Feature : Histogram of Oriented Gradients
 """
 
 import os
@@ -26,7 +22,7 @@ from joblib import Parallel, delayed
 # grid_size: distance between two neighbouring pixel optical flow values.
 # stop: to traversel 'stop' no of files in each subdirectory.
 # Return: traversed: no of videos traversed successfully
-def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all'):
+def extract_hog_vids(srcFolderPath, destFolderPath, hog, stop='all'):
     # iterate over the subfolders in srcFolderPath and extract for each video 
     vfiles = os.listdir(srcFolderPath)
     
@@ -61,15 +57,16 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 5  # No. of videos in a single batch
-    njobs = 3   # No. of threads
+    batch = 1  # No. of videos in a single batch
+    njobs = 1   # No. of threads
     
     for i in range(nrows/batch):
+        #batch_diffs = getHOGVideo(filenames_df['infiles'][i], hog)
         # 
-        batch_diffs = Parallel(n_jobs=njobs)(delayed(getFarnebackOFVideo) \
-                          (filenames_df['infiles'][i*batch+j], grid_size) \
+        batch_diffs = Parallel(n_jobs=njobs)(delayed(getHOGVideo) \
+                          (filenames_df['infiles'][i*batch+j], hog) \
                           for j in range(batch))
-        
+        print "i = "+str(i)
         # Writing the diffs in a serial manner
         for j in range(batch):
             if batch_diffs[j] is not None:
@@ -81,8 +78,8 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
     # For last batch which may not be complete, extract serially
     last_batch_size = nrows - ((nrows/batch)*batch)
     if last_batch_size > 0:
-        batch_diffs = Parallel(n_jobs=njobs)(delayed(getFarnebackOFVideo) \
-                              (filenames_df['infiles'][(nrows/batch)*batch+j], grid_size) \
+        batch_diffs = Parallel(n_jobs=njobs)(delayed(getHOGVideo) \
+                              (filenames_df['infiles'][(nrows/batch)*batch+j], hog) \
                               for j in range(last_batch_size)) 
         # Writing the diffs in a serial manner
         for j in range(last_batch_size):
@@ -93,19 +90,9 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
                                     filenames_df['outfiles'][(nrows/batch)*batch+j]
     
     ###########################################################################
+    print len(batch_diffs)
     return traversed
-#    for idx, vid in enumerate(vids_lst):
-#        #get_hist_diff(os.path.join(DATASET, vid+'.avi'))
-#        diffs = getHistogramOfVideo(os.path.join(DATASET, vid+'.avi'), "", 100)
-#        #print "diffs : ",diffs
-#        print "Done : " + str(idx+1)
-#        hist_diff_all.append(diffs)
-#        # save diff_hist to disk    
-#        #outfile = file(os.path.join(destPath,"diff_hist.bin"), "wb")
-#        #np.save(outfile, diffs)
-#        #outfile.close()    
-#        #break
-#    return hist_diff_all
+
 
 # return the total number of frames in the video
 def getTotalFramesVid(srcVideoPath):
@@ -123,8 +110,7 @@ def getTotalFramesVid(srcVideoPath):
 # and sample magnitude and angle features with a distance of grid_size between 
 # two neighbours.
 # Copied and editted from shot_detection.py script
-# color=('b') : For grayscale, ('b','g','r') for RGB
-def getFarnebackOFVideo(srcVideoPath, grid_size):
+def getHOGVideo(srcVideoPath, hog):
     # get the VideoCapture object
     cap = cv2.VideoCapture(srcVideoPath)
     
@@ -133,14 +119,14 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
         print("Error reading the video file !!")
         return None
     
-    dimensions = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    w, h = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
     totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     frameCount = 0
     features_current_file = []
     
-    ret, prev_frame = cap.read()
-    assert ret, "Capture object does not return a frame!"
-    prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    #ret, prev_frame = cap.read()
+    assert cap.isOpened(), "Capture object does not return a frame!"
+    #prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
     
     # Iterate over the entire video to get the optical flow features.
     while(cap.isOpened()):
@@ -149,18 +135,11 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
         if not ret:
             break
         curr_frame = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
-        flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-        mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
-        # stack sliced arrays along the first axis (2, (360/grid), (640/grid))
-        #sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
-        #                        ang[::grid_size, ::grid_size]), axis=0)
-        sliced_flow = mag[::grid_size, ::grid_size]
-
-        #feature.append(sliced_flow[..., 0].ravel())
-        #feature.append(sliced_flow[..., 1].ravel())
+        curr_frame = curr_frame[(w/2-32):(w/2+32), (h/2-32):(h/2+32)]
+        #flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        hog_feature = hog.compute(curr_frame)   # vector
         # saving as a list of float values (after converting into 1D array)
-        features_current_file.append(sliced_flow.ravel().tolist())
-        prev_frame = curr_frame
+        features_current_file.append(hog_feature.ravel().tolist())
 
     # When everything done, release the capture
     cap.release()
@@ -174,11 +153,15 @@ if __name__=='__main__':
     # The destPath will be created and inside that directory structure similar 
     # to src path will be created, with binary files containing the features.
     #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
-    gridSize = 20
     srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    #destPath = "/home/arpan/VisionWorkspace/shot_detection/extracted_features/OF_ds_25_fps"
-    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/OF_mag_grid"+str(gridSize)
+    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/hog_feats_new"
+    if not os.path.exists(srcPath):
+        srcPath = "/opt/datasets/cricket/ICC_WT20"
+        destPath = "/home/arpan/VisionWorkspace/localization_rnn/hog_feat"
+    
+    hog_params_file = "hog.xml"     # in current dir
+    hog = cv2.HOGDescriptor(hog_params_file)
     start = time.time()
-    extract_dense_OF_vids(srcPath, destPath, grid_size=gridSize, stop='all')
+    extract_hog_vids(srcPath, destPath, hog, stop='all')
     end = time.time()
     print "Total execution time : "+str(end-start)
