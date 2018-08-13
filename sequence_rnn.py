@@ -9,17 +9,14 @@ localization of cricket strokes on Highlight videos dataset.
 """
 
 import torch
-import numpy as np
-import cv2
 import os
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 #import matplotlib.pyplot as plt
 import pickle
 import time
-import shutil
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import utils
+from torch.autograd import Variable
 from Video_Dataset import VideoDataset
 
 torch.manual_seed(777)  # reproducibility
@@ -35,13 +32,15 @@ if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
 
 THRESHOLD = 0.5
 # Parameters and DataLoaders
-HIDDEN_SIZE = 1000
+HIDDEN_SIZE = 3000
 N_LAYERS = 1
 BATCH_SIZE = 256
 N_EPOCHS = 100
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 10
+SEQ_SIZE = 5
+threshold = 0.5
+seq_threshold = 0.5
 
 class RNNClassifier(nn.Module):
     # Our model
@@ -100,7 +99,7 @@ class RNNClassifier(nn.Module):
          #* self.n_directions
         hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, \
                              self.hidden_size)
-        return create_variable(hidden)
+        return utils.create_variable(hidden)
 
 
 #class RNN(nn.Module):
@@ -134,253 +133,9 @@ class RNNClassifier(nn.Module):
 #        return out.view(-1, num_classes-1)
 
 
-def create_variable(tensor):
-    # Do cuda() before wrapping with variable
-    if torch.cuda.is_available():
-        return Variable(tensor.cuda())
-    else:
-        return Variable(tensor)
-
-# Split the dataset files into training, validation and test sets
-def split_dataset_files():
-    filenames = sorted(os.listdir(DATASET))         # read the filenames
-    # filenames = [t.rsplit('.')[0] for t in filenames]   # remove the extension
-    filenames = [t.split('.')[0] for t in filenames]   # remove the extension
-    return filenames[:16], filenames[16:21], filenames[21:]
-    
-
-# function to count the number of parameters in the model
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-# send a list of lists containing start and end frames of actions
-# eg [98, 218], [376, 679], [2127, 2356], [4060, 4121], [4137, 4250]]
-# Return a sequence of action labels corresponding to frame features
-def get_vid_labels_vec(labels, vid_len):
-    if labels is None or len(labels)==0:
-        return []
-    v = []
-    for i,x in enumerate(labels):
-        if i==0:
-            v.extend([0]*(x[0]-1))
-        else:
-            v.extend([0]*(x[0]-labels[i-1][1]-1))
-        v.extend([1]*(x[1]-x[0]+1))  
-    v.extend([0]*(vid_len - labels[-1][1]))
-    return v
-
-
-def getNFrames(vid):
-    cap = cv2.VideoCapture(vid)
-    if not cap.isOpened():
-        import sys
-        print "Capture Object not opened ! Abort"
-        sys.exit(0)
-        
-    l = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.release()
-    return l
-
-
-def getFeatureVectors(datasetpath, videoFiles, sequences):
-    """
-     Iteratively take the batch information and extract the feature sequences from the videos
-     datasetpath : Prefix of the path to the dataset containing the videos
-     videoFiles : list/tuple of filenames for the videos (size n)
-     sequences :  list of start frame numbers and end frame numbers 
-     sequences[0] and [1] are torch.LongTensor of size n each.
-     returns a list of lists. Inner list contains a sequence of arrays 
-    """
-    grid_size = 20
-    batch_feats = []
-    # Iterate over the videoFiles in the batch and extract the corresponding feature
-    for i, videoFile in enumerate(videoFiles):
-        videoFile = videoFile.split('/')[1]
-        vid_feat_seq = []
-        # use capture object to get the sequences
-        cap = cv2.VideoCapture(os.path.join(datasetpath, videoFile))
-        if not cap.isOpened():
-            print "Capture object not opened : {}".format(videoFile)
-            import sys
-            sys.exit(0)
-            
-        start_frame = sequences[0][i]
-        end_frame = sequences[1][i]
-        ####################################################    
-        #print "Start Times : {} :: End Times : {}".format(start_frame, end_frame)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        ret, prev_frame = cap.read()
-        if ret:
-            # convert frame to GRAYSCALE
-            prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-        else:
-            print "Frame not read: {} : {}".format(videoFile, start_frame)
-
-        for stime in range(start_frame+1, end_frame+1):
-            ret, frame = cap.read()
-            if not ret:
-                print "Frame not read : {} : {}".format(videoFile, stime)
-                continue
-            
-            curr_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            #cv2.calcOpticalFlowFarneback(prev, next, pyr_scale, levels, winsize, 
-            #                iterations, poly_n, poly_sigma, flags[, flow])
-            # prev(y,x)~next(y+flow(y,x)[1], x+flow(y,x)[0])
-            flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            #print "For frames: ("+str(stime-1)+","+str(stime)+") :: shape : "+str(flow.shape)
-            
-            mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
-            # stack sliced arrays along the first axis (2, 12, 16)
-            sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
-                                    ang[::grid_size, ::grid_size]), axis=0)
-            sliced_flow = sliced_flow.ravel()   # flatten
-            vid_feat_seq.append(sliced_flow.tolist())    # append to list
-            prev_frame = curr_frame
-        cap.release()            
-        batch_feats.append(vid_feat_seq)
-        
-    return batch_feats
-    
-
-def readAllOFfeatures(OFfeaturesPath, keys):
-    """
-    Load the features of the train/val/test set into a dictionary. Dictionary 
-    has key as the filename(without ext) of video and value as the numpy feature 
-    matrix.
-    """
-    feats = {}
-    for k in keys:
-        featpath = os.path.join(OFfeaturesPath, k)+".bin"
-        assert os.path.exists(featpath), "featpath not found {}".format(featpath)
-        with open(featpath, "rb") as fobj:
-            feats[k] = pickle.load(fobj)
-            
-    print "Features loaded into dictionary ..."
-    return feats
-
-def readAllHOGfeatures(HOGfeaturesPath, keys):
-    """
-    Load the features of the train/val/test set into a dictionary. Dictionary 
-    has key as the filename(without ext) of video and value as the numpy feature 
-    matrix.
-    """
-    feats = {}
-    for k in keys:
-        featpath = os.path.join(HOGfeaturesPath, k)+".bin"
-        with open(featpath, "rb") as fobj:
-            feats[k] = pickle.load(fobj)
-            
-    print "Features loaded into dictionary ..."
-    return feats
-        
-    
-def getFeatureVectorsFromDump(features, videoFiles, sequences, motion=True):
-    """Select only the batch features from the dictionary of features (corresponding
-    to the given sequences) and return them as a list of lists. 
-    OFfeatures: a dictionary of features {vidname: numpy matrix, ...}
-    videoFiles: the list of filenames for a batch
-    sequences: the start and end frame numbers in the batch videos to be sampled.
-    """
-    #grid_size = 20
-    batch_feats = []
-    # Iterate over the videoFiles in the batch and extract the corresponding feature
-    for i, videoFile in enumerate(videoFiles):
-        # get key value for the video. Use this to read features from dictionary
-        videoFile = videoFile.split('/')[1].rsplit('.', 1)[0]
-            
-        start_frame = sequences[0][i]   # starting point of sequences in video
-        end_frame = sequences[1][i]     # end point
-        # Load features
-        # (N-1) sized list of vectors of 1152 dim
-        vidFeats = features[videoFile]  
-        if motion:
-            vid_feat_seq = vidFeats[start_frame:end_frame]
-        else:
-            vid_feat_seq = vidFeats[start_frame:(end_frame+1)]
-        
-        batch_feats.append(vid_feat_seq)
-        
-    return batch_feats
-
-
-# Inputs: feats: list of lists
-def make_variables(feats, labels, motion=True):
-    # Create the input tensors and target label tensors
-    #for item in feats:
-        # item is a list with (sequence of) 9 1D vectors (each of 1152 size)
-        
-    feats = torch.Tensor(feats)
-    feats[feats==float("-Inf")] = 0
-    feats[feats==float("Inf")] = 0
-    # Form the target labels 
-    target = []
-#    for i in range(labels[0].size(0)):
-#        if labels[0][i]<5:
-#            target.append(0)
-#        else:
-#            target.append(1)
-            
-    for i in range(labels[0].size(0)):
-        if labels[0][i]>0:
-            if motion:
-                target.extend([0]*(labels[0][i]-1) + [1]*labels[1][i])
-            else:
-                target.extend([0]*labels[0][i] + [1]*labels[1][i])
-        else:
-            if motion:
-                target.extend([0]*labels[0][i] + [1]*(labels[1][i]-1))
-            else:
-                target.extend([0]*labels[0][i] + [1]*labels[1][i])
-    # Form a wrap into a tensor variable as B X S X I
-    return create_variable(feats), create_variable(torch.Tensor(target))
-
-def save_checkpoint(state, is_best, save_path, filename):
-    filename = os.path.join(save_path, filename)
-    torch.save(state, filename)
-    if is_best:
-        bestname = os.path.join(save_path, 'model_best.pth.tar')
-        shutil.copyfile(filename, bestname)
-
-
-# function to remove the action segments that have less than "epsilon" frames.
-def filter_action_segments(shots_dict, epsilon=10):
-    filtered_shots = {}
-    for k,v in shots_dict.iteritems():
-        vsegs = []
-        for segment in v:
-            if (segment[1]-segment[0] >= epsilon):
-                vsegs.append(segment)
-        filtered_shots[k] = vsegs
-    return filtered_shots
-
-# function to remove the non-action segments that have less than "epsilon" frames.
-# Here we need to merge one or more action segments
-def filter_non_action_segments(shots_dict, epsilon=10):
-    filtered_shots = {}
-    for k,v in shots_dict.iteritems():
-        vsegs = []
-        isFirstSeg = True
-        for segment in v:
-            if isFirstSeg:
-                prev_st, prev_end = segment
-                isFirstSeg = False
-                continue
-            if (segment[0] - prev_end) <= epsilon:
-                prev_end = segment[1]   # new end of segment
-            else:       # Append to list
-                vsegs.append((prev_st, prev_end))
-                prev_st, prev_end = segment     
-        # For last segment
-        if len(v) > 0:      # For last segment
-            vsegs.append((prev_st, prev_end))
-        filtered_shots[k] = vsegs
-    return filtered_shots
-
 if __name__=="__main__":
     # Divide the samples files into training set, validation and test sets
-    train_lst, val_lst, test_lst = split_dataset_files()
+    train_lst, val_lst, test_lst = utils.split_dataset_files(DATASET)
     print(train_lst, len(train_lst))
     print 60*"-"
     # specifiy for grayscale or BGR values
@@ -395,7 +150,7 @@ if __name__=="__main__":
     #####################################################################
     
     tr_labs = [os.path.join(LABELS, f) for f in train_lab]
-    sizes = [getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
+    sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
     print "Size : {}".format(sizes)
     hlDataset = VideoDataset(tr_labs, sizes, seq_size=SEQ_SIZE, is_train_set = True)
     print hlDataset.__len__()
@@ -424,10 +179,11 @@ if __name__=="__main__":
     # read into dictionary {vidname: np array, ...}
     print("Loading features from disk...")
     #OFfeatures = readAllOFfeatures(OFfeaturesPath, train_lst)
-    HOGfeatures = readAllHOGfeatures(HOGfeaturesPath, train_lst)
+    HOGfeatures = utils.readAllHOGfeatures(HOGfeaturesPath, train_lst)
     print(len(train_loader.dataset))
     
     INP_VEC_SIZE = len(HOGfeatures[HOGfeatures.keys()[0]][0])   # list of vals
+    print("INP_VEC_SIZE = ", INP_VEC_SIZE)
     
     # Creating the RNN and training
     classifier = RNNClassifier(INP_VEC_SIZE, HIDDEN_SIZE, 1, N_LAYERS)
@@ -454,12 +210,12 @@ if __name__=="__main__":
             #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
             #feats = getFeatureVectors(DATASET, keys, seqs)   # Takes time. Do not use
             #batchFeats = getFeatureVectorsFromDump(OFfeatures, keys, seqs, motion=True)
-            batchFeats = getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
+            batchFeats = utils.getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
             #break
 
             # Training starts here
             #inputs, target = make_variables(batchFeats, labels, motion=True)
-            inputs, target = make_variables(batchFeats, labels, motion=False)
+            inputs, target = utils.make_variables(batchFeats, labels, motion=False)
             output = classifier(inputs)
 
             loss = criterion(sigm(output.view(output.size(0))), target)
@@ -519,7 +275,7 @@ if __name__=="__main__":
     # Test a video or calculate the accuracy using the learned model
     print "Prediction video meta info."
     val_labs = [os.path.join(LABELS, f) for f in val_lab]
-    val_sizes = [getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
+    val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
     print "Size : {}".format(val_sizes)
     hlvalDataset = VideoDataset(val_labs, val_sizes, is_train_set = False)
     print hlvalDataset.__len__()
@@ -533,18 +289,18 @@ if __name__=="__main__":
     predictions = []
     print "Loading validation/test features from disk..."
     #OFValFeatures = readAllOFfeatures(OFfeaturesPath, val_lst)
-    HOGValFeatures = readAllHOGfeatures(HOGfeaturesPath, val_lst)   
+    HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)   
     print("Predicting on the validation/test videos...")
     for i, (keys, seqs, labels) in enumerate(val_loader):
         
         # Testing on the sample
         #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
         #batchFeats = getFeatureVectorsFromDump(OFValFeatures, keys, seqs, motion=True)
-        batchFeats = getFeatureVectorsFromDump(HOGValFeatures, keys, seqs, motion=False)
+        batchFeats = utils.getFeatureVectorsFromDump(HOGValFeatures, keys, seqs, motion=False)
         #break
         # Validation stage
         #inputs, target = make_variables(batchFeats, labels, motion=True)
-        inputs, target = make_variables(batchFeats, labels, motion=False)
+        inputs, target = utils.make_variables(batchFeats, labels, motion=False)
         output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
 
         #pred = output.data.max(1, keepdim=True)[1]  # get max value in each row
@@ -578,9 +334,9 @@ if __name__=="__main__":
     
     from get_localizations import getLocalizations
     from get_localizations import getVidLocalizations
-    threshold = 0.5
-    seq_threshold = 0.5
+
     # [4949, 4369, 4455, 4317, 4452]
+    #predictions = [p.cpu() for p in predictions]  # convert to CPU tensor values
     localization_dict = getLocalizations(val_keys, predictions, BATCH_SIZE, \
                                          threshold, seq_threshold)
 
@@ -595,7 +351,7 @@ if __name__=="__main__":
 
     # Apply filtering    
     i = 60  # optimum
-    filtered_shots = filter_action_segments(localization_dict, epsilon=i)
+    filtered_shots = utils.filter_action_segments(localization_dict, epsilon=i)
     #i = 7  # optimum
     #filtered_shots = filter_non_action_segments(filtered_shots, epsilon=i)
     filt_shots_filename = "predicted_localizations_th0_5_filt"+str(i)+".json"
