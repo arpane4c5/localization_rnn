@@ -61,8 +61,8 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 5  # No. of videos in a single batch
-    njobs = 3   # No. of threads
+    batch = 10  # No. of videos in a single batch
+    njobs = 10   # No. of threads
     
     for i in range(nrows/batch):
         # 
@@ -152,9 +152,11 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
         flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
         mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
         # stack sliced arrays along the first axis (2, (360/grid), (640/grid))
-        #sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
-        #                        ang[::grid_size, ::grid_size]), axis=0)
-        sliced_flow = mag[::grid_size, ::grid_size]
+        sliced_flow = np.stack(( mag[::grid_size, ::grid_size], \
+                                ang[::grid_size, ::grid_size]), axis=0)
+        
+        # For extracting only magnitude features, uncomment the following
+        #sliced_flow = mag[::grid_size, ::grid_size]
 
         #feature.append(sliced_flow[..., 0].ravel())
         #feature.append(sliced_flow[..., 1].ravel())
@@ -173,11 +175,11 @@ if __name__=='__main__':
     # The function iterates over the subfolders and videos inside that.
     # The destPath will be created and inside that directory structure similar 
     # to src path will be created, with binary files containing the features.
-    #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
-    gridSize = 20
-    srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    #destPath = "/home/arpan/VisionWorkspace/shot_detection/extracted_features/OF_ds_25_fps"
-    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/OF_mag_grid"+str(gridSize)
+    gridSize = 40
+    srcPath = '/opt/datasets/cricket/ICC_WT20'
+    #srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+    destPath = "/home/arpan/VisionWorkspace/localization_rnn/OF_grid"+str(gridSize)
+    #destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/OF_grid"+str(gridSize)
     start = time.time()
     extract_dense_OF_vids(srcPath, destPath, grid_size=gridSize, stop='all')
     end = time.time()
