@@ -6,3 +6,6 @@ OF_mag_grid*/
 *.pt
 *.pkl
 hog_feat*/
+*.zip
+*.avi
+vid/

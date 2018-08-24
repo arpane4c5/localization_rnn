@@ -275,30 +275,28 @@ if __name__=="__main__":
     
     # Test a video or calculate the accuracy using the learned model
     print "Prediction video meta info."
-    #val_labs = [os.path.join(LABELS, f) for f in val_lab]
-    test_labs = [os.path.join(LABELS, f) for f in test_lab]
-    #val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
-    test_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in test_lst]
-    print "Size : {}".format(test_sizes)
-    hltestDataset = VideoDataset(test_labs, test_sizes, is_train_set = False)
-    print hltestDataset.__len__()
+    val_labs = [os.path.join(LABELS, f) for f in test_lab]
+    val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in test_lst]
+    print "Size : {}".format(val_sizes)
+    hlvalDataset = VideoDataset(val_labs, val_sizes, is_train_set = False)
+    print hlvalDataset.__len__()
     
     # Create a DataLoader object and sample batches of examples. 
     # These batch samples are used to extract the features from videos parallely
-    test_loader = DataLoader(dataset=hltestDataset, batch_size=BATCH_SIZE, shuffle=False)
-    print(len(test_loader.dataset))
+    val_loader = DataLoader(dataset=hlvalDataset, batch_size=BATCH_SIZE, shuffle=False)
+    print(len(val_loader.dataset))
     correct = 0
-    test_keys = []
+    val_keys = []
     predictions = []
     print "Loading validation/test features from disk..."
-    OFTestFeatures = utils.readAllOFfeatures(OFfeaturesPath, test_lst)
+    OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, test_lst)
     #HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)   
     print("Predicting on the validation/test videos...")
-    for i, (keys, seqs, labels) in enumerate(test_loader):
+    for i, (keys, seqs, labels) in enumerate(val_loader):
         
         # Testing on the sample
         #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
-        batchFeats = utils.getFeatureVectorsFromDump(OFTestFeatures, keys, seqs, motion=True)
+        batchFeats = utils.getFeatureVectorsFromDump(OFValFeatures, keys, seqs, motion=True)
         #batchFeats = utils.getFeatureVectorsFromDump(HOGValFeatures, keys, seqs, motion=False)
         #break
         # Validation stage
@@ -310,7 +308,7 @@ if __name__=="__main__":
         pred_probs = sigm(output.view(output.size(0))).data  # get the normalized values (0-1)
         #preds = pred_probs > THRESHOLD  # ByteTensor
         #correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-        test_keys.append(keys)
+        val_keys.append(keys)
         predictions.append(pred_probs)  # append the 
         
         #loss = criterion(m(output.view(output.size(0))), target)
@@ -326,8 +324,8 @@ if __name__=="__main__":
     with open("predictions.pkl", "wb") as fp:
         pickle.dump(predictions, fp)
     
-    with open("test_keys.pkl", "wb") as fp:
-        pickle.dump(test_keys, fp)
+    with open("val_keys.pkl", "wb") as fp:
+        pickle.dump(val_keys, fp)
     
 #    with open("predictions.pkl", "rb") as fp:
 #        predictions = pickle.load(fp)
@@ -340,7 +338,7 @@ if __name__=="__main__":
 
     # [4949, 4369, 4455, 4317, 4452]
     #predictions = [p.cpu() for p in predictions]  # convert to CPU tensor values
-    localization_dict = getLocalizations(test_keys, predictions, BATCH_SIZE, \
+    localization_dict = getLocalizations(val_keys, predictions, BATCH_SIZE, \
                                          threshold, seq_threshold)
 
     print localization_dict
