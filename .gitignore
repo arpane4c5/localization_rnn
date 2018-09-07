@@ -9,3 +9,5 @@ hog_feat*/
 *.zip
 *.avi
 vid/
+c3d.pickle
+data/
