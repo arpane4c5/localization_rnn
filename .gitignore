@@ -11,3 +11,4 @@ hog_feat*/
 vid/
 c3d.pickle
 data/
+numpy_frames_cropped/

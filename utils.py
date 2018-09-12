@@ -158,6 +158,20 @@ def readAllHOGfeatures(HOGfeaturesPath, keys):
     print "Features loaded into dictionary ..."
     return feats
         
+def readAllNumpyFrames(numpyFramesPath, keys):
+    """
+    Load the frames of the train/val/test set into a dictionary. Dictionary 
+    has key as the filename(without ext) of video and value as the Nxhxw numpy  
+    matrix.
+    """
+    feats = {}
+    for k in keys:
+        featpath = os.path.join(numpyFramesPath, k)+".npy"
+        feats[k] = np.load(featpath)
+            
+    print "Features loaded into dictionary ..."
+    return feats
+
     
 def getFeatureVectorsFromDump(features, videoFiles, sequences, motion=True):
     """Select only the batch features from the dictionary of features (corresponding
@@ -187,6 +201,33 @@ def getFeatureVectorsFromDump(features, videoFiles, sequences, motion=True):
         
     return batch_feats
 
+def getC3DFeatures(c3d_model, frames, videoFiles, sequences):
+    """
+    Select the batch frames from the dictionary of numpy frames (corresponding
+    to the given sequences) and extract C3D feature vector from them (fc7 layer)
+    return them as a list of lists. 
+    OFfeatures: a dictionary of features {vidname: numpy matrix, ...}
+    videoFiles: the list of filenames for a batch
+    sequences: the start and end frame numbers in the batch videos to be sampled.
+    """
+    #grid_size = 20
+    batch_feats = []
+    # Iterate over the videoFiles in the batch and extract the corresponding feature
+    for i, videoFile in enumerate(videoFiles):
+        # get key value for the video. Use this to read features from dictionary
+        videoFile = videoFile.split('/')[1].rsplit('.', 1)[0]
+            
+        start_frame = sequences[0][i]   # starting point of sequences in video
+        end_frame = sequences[1][i]     # end point
+        # Load features
+        # (N-1) sized list of vectors of 1152 dim
+        vidFeats = features[videoFile]  
+        
+        vid_frames_seq = vidFeats[start_frame:(end_frame+1)]
+        
+        batch_feats.append(vid_frames_seq)
+        
+    return batch_feats
 
 # Inputs: feats: list of lists
 def make_variables(feats, labels, motion=True):

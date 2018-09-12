@@ -41,7 +41,7 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
     for vid in vfiles:
         if os.path.isfile(os.path.join(srcFolderPath, vid)) and vid.rsplit('.', 1)[1] in {'avi', 'mp4'}:
             infiles.append(os.path.join(srcFolderPath, vid))
-            outfiles.append(os.path.join(destFolderPath, vid.rsplit('.',1)[0]+".bin"))
+            outfiles.append(os.path.join(destFolderPath, vid.rsplit('.',1)[0]+".npy"))
             nFrames.append(getTotalFramesVid(os.path.join(srcFolderPath, vid)))
             # save at the destination, if extracted successfully
             traversed += 1
@@ -73,8 +73,9 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
         # Writing the diffs in a serial manner
         for j in range(batch):
             if batch_diffs[j] is not None:
-                with open(filenames_df['outfiles'][i*batch+j] , "wb") as fp:
-                    pickle.dump(batch_diffs[j], fp)
+#                with open(filenames_df['outfiles'][i*batch+j] , "wb") as fp:
+#                    pickle.dump(batch_diffs[j], fp)
+                np.save(filenames_df['outfiles'][i*batch+j], batch_diffs[j])
                 print "Written "+str(i*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][i*batch+j]
             
@@ -87,8 +88,9 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
         # Writing the diffs in a serial manner
         for j in range(last_batch_size):
             if batch_diffs[j] is not None:
-                with open(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb") as fp:
-                    pickle.dump(batch_diffs[j], fp)
+#                with open(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb") as fp:
+#                    pickle.dump(batch_diffs[j], fp)
+                np.save(filenames_df['outfiles'][(nrows/batch)*batch+j], batch_diffs[j])
                 print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][(nrows/batch)*batch+j]
     
@@ -161,13 +163,14 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
         #feature.append(sliced_flow[..., 0].ravel())
         #feature.append(sliced_flow[..., 1].ravel())
         # saving as a list of float values (after converting into 1D array)
-        features_current_file.append(sliced_flow.ravel().tolist())
+        #features_current_file.append(sliced_flow.ravel().tolist())
+        features_current_file.append(sliced_flow)
         prev_frame = curr_frame
 
     # When everything done, release the capture
     cap.release()
     #print "{}/{} frames in {}".format(frameCount, totalFrames, srcVideoPath)
-    return features_current_file
+    return np.array(features_current_file)
 
 
 if __name__=='__main__':
@@ -175,10 +178,10 @@ if __name__=='__main__':
     # The function iterates over the subfolders and videos inside that.
     # The destPath will be created and inside that directory structure similar 
     # to src path will be created, with binary files containing the features.
-    gridSize = 40
+    gridSize = 20
     srcPath = '/opt/datasets/cricket/ICC_WT20'
     #srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    destPath = "/home/arpan/VisionWorkspace/localization_rnn/OF_grid"+str(gridSize)
+    destPath = "/home/arpan/VisionWorkspace/localization_rnn/OF_grid_new_"+str(gridSize)
     #destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/OF_grid"+str(gridSize)
     start = time.time()
     extract_dense_OF_vids(srcPath, destPath, grid_size=gridSize, stop='all')
