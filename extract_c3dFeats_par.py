@@ -85,11 +85,15 @@ def extract_c3d_all(model, srcFolderPath, destFolderPath, onGPU=True, depth=16, 
     if onGPU:
         # Serial Implementation (For GPU based extraction)
         for i in range(nrows):
+            st = time.time()
             feat = getC3DFrameFeats(model, filenames_df['infiles'][i], onGPU, depth)
             # save the feature to disk
             if feat is not None:
                 np.save(filenames_df['outfiles'][i], feat)
                 print "Written "+str(i)+" : "+filenames_df['outfiles'][i]
+                
+            e = time.time()
+            print "Execution Time : "+str(e-st)
     
     else:    
         #feat = getC3DFrameFeats(model, filenames_df['infiles'][0], onGPU, depth)
@@ -276,18 +280,15 @@ def getC3DFrameFeats(model, srcVideoPath, onGPU, depth):
             # Convert to Variable
             #input_mat = torch.from_numpy(input_mat)
             input_mat = Variable(input_mat)
-#            if onGPU:
-#                input_mat = input_mat.cuda()
             
             # get the prediction after passing the input to the C3D model
             prediction = model(input_mat)
             # convert to numpy vector
             prediction = prediction.data.cpu().numpy()
-            #features_current_file.append(prediction.ravel().tolist())
             features_current_file.append(prediction)
             
         frameCount +=1
-        print "{} / {}".format(frameCount, totalFrames)
+        #print "{} / {}".format(frameCount, totalFrames)
 
     # When everything done, release the capture
     cap.release()
@@ -321,6 +322,8 @@ if __name__=='__main__':
         srcPath = "/opt/datasets/cricket/ICC_WT20"
         destPath = "/home/arpan/VisionWorkspace/localization_rnn/c3d_feats_16"
     
+    
+    print "Using the GPU : "+str(onGPU)
     start = time.time()
     nfiles = extract_c3d_all(model, srcPath, destPath, onGPU=onGPU, depth=16, stop='all')
     end = time.time()
