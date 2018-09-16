@@ -19,7 +19,7 @@ from torch.autograd import Variable
 from joblib import Parallel, delayed
     
 
-def extract_c3d_all(model, srcFolderPath, destFolderPath, depth=16, stop='all'):
+def extract_c3d_all(model, srcFolderPath, destFolderPath, onGPU=True, depth=16, stop='all'):
     """
     Function to extract the features from a list of videos
     
@@ -31,6 +31,9 @@ def extract_c3d_all(model, srcFolderPath, destFolderPath, depth=16, stop='all'):
         path to folder which contains the videos
     destFolderPath: str
         path to store the optical flow values in .bin files
+    onGPU: boolean
+        True enables a serial extraction by sending model and data to GPU,
+        False enables a parallel extraction on the different CPU cores.
     depth: int
         No. of frames (min 16) taken from video and fed to C3D at a time.
     stop: str
@@ -75,43 +78,51 @@ def extract_c3d_all(model, srcFolderPath, destFolderPath, depth=16, stop='all'):
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 10  # No. of videos in a single batch
-    njobs = 10   # No. of threads
+    batch = 1  # No. of videos in a single batch
+    njobs = 1   # No. of threads
     
-    d = getC3DFrameFeats(model, filenames_df['infiles'][0], depth)
-    return d
+    ###########################################################################
+    if onGPU:
+        # Serial Implementation (For GPU based extraction)
+        for i in range(nrows):
+            feat = getC3DFrameFeats(model, filenames_df['infiles'][i], onGPU, depth)
+            # save the feature to disk
+            if feat is not None:
+                np.save(filenames_df['outfiles'][i], feat)
+                print "Written "+str(i)+" : "+filenames_df['outfiles'][i]
     
-#    print d.shape
-#    for i in range(nrows/batch):
-#        #batch_diffs = getHOGVideo(filenames_df['infiles'][i], hog)
-#        # 
-#        batch_diffs = Parallel(n_jobs=njobs)(delayed(getC3DFrameFeats) \
-#                          (model, filenames_df['infiles'][i*batch+j], depth) \
-#                          for j in range(batch))
-#        print "i = "+str(i)
-#        # Writing the diffs in a serial manner
-#        for j in range(batch):
-#            if batch_diffs[j] is not None:
-#                np.save(filenames_df['outfiles'][i*batch+j], batch_diffs[j])
-#                print "Written "+str(i*batch+j+1)+" : "+ \
-#                                    filenames_df['outfiles'][i*batch+j]
-#            
-#    # For last batch which may not be complete, extract serially
-#    last_batch_size = nrows - ((nrows/batch)*batch)
-#    if last_batch_size > 0:
-#        batch_diffs = Parallel(n_jobs=njobs)(delayed(getC3DFrameFeats) \
-#                              (model, filenames_df['infiles'][(nrows/batch)*batch+j], depth) \
-#                              for j in range(last_batch_size)) 
-#        # Writing the diffs in a serial manner
-#        for j in range(last_batch_size):
-#            if batch_diffs[j] is not None:
-#                np.save(filenames_df['outfiles'][(nrows/batch)*batch+j], batch_diffs[j])
-#                print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
-#                                    filenames_df['outfiles'][(nrows/batch)*batch+j]
-#    
-#    ###########################################################################
+    else:    
+        #feat = getC3DFrameFeats(model, filenames_df['infiles'][0], onGPU, depth)
+        # Parallel version (For CPU based extraction)
+        for i in range(nrows/batch):
+            
+            batch_diffs = Parallel(n_jobs=njobs)(delayed(getC3DFrameFeats) \
+                        (model, filenames_df['infiles'][i*batch+j], onGPU, depth) \
+                        for j in range(batch))
+            print "i = "+str(i)
+            # Writing the diffs in a serial manner
+            for j in range(batch):
+                if batch_diffs[j] is not None:
+                    np.save(filenames_df['outfiles'][i*batch+j], batch_diffs[j])
+                    print "Written "+str(i*batch+j+1)+" : "+ \
+                                        filenames_df['outfiles'][i*batch+j]
+                
+        # For last batch which may not be complete, extract serially
+        last_batch_size = nrows - ((nrows/batch)*batch)
+        if last_batch_size > 0:
+            batch_diffs = Parallel(n_jobs=njobs)(delayed(getC3DFrameFeats) \
+                        (model, filenames_df['infiles'][(nrows/batch)*batch+j], onGPU, depth) \
+                        for j in range(last_batch_size)) 
+            # Writing the diffs in a serial manner
+            for j in range(last_batch_size):
+                if batch_diffs[j] is not None:
+                    np.save(filenames_df['outfiles'][(nrows/batch)*batch+j], batch_diffs[j])
+                    print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
+                                        filenames_df['outfiles'][(nrows/batch)*batch+j]
+    
+    ###########################################################################
 #    print len(batch_diffs)
-#    return traversed
+    return traversed
 
 
 def getTotalFramesVid(srcVideoPath):
@@ -183,7 +194,7 @@ def getFrames(srcVideoPath):
     return np.array(features_current_file)      # convert to N x w x h
 
 
-def getC3DFrameFeats(model, srcVideoPath, depth):
+def getC3DFrameFeats(model, srcVideoPath, onGPU, depth):
     """
     Function to read all the frames of the video and get sequence of features
     by passing 'depth' frames to C3D model, one batch at a time. 
@@ -240,20 +251,33 @@ def getC3DFrameFeats(model, srcVideoPath, depth):
             if type(X)==list:   # For exactly first 16 frames, convert to np.ndarray 
                 X.append(curr_frame)
                 X = np.stack(X)
+                X = np.float32(X)
+                X = torch.from_numpy(X)
+                if onGPU:
+                    X = X.cuda()
             else:   # sliding the window (taking 15 last frames and append next)
                     # Adding a new dimension and concat on first axis
-                X = np.concatenate((X[1:], curr_frame[None, :]), axis=0)
+                curr_frame = np.float32(curr_frame)
+                curr_frame = torch.from_numpy(curr_frame)
+                if onGPU:
+                    curr_frame = curr_frame.cuda()
+                #X = np.concatenate((X[1:], curr_frame[None, :]), axis=0)
+                X = torch.cat([X[1:], curr_frame[None, :]])
         
             # TODO: Transpose once, and concat on first axis for subsequent frames
             # passing the matrix X to the C3D model
             # X is (depth, H, W, Ch)
-            input_mat = X.transpose(3, 0, 1, 2)     # ch, depth, H, W
-            input_mat = np.expand_dims(input_mat, axis=0)
-            input_mat = np.float32(input_mat)
+            #input_mat = X.transpose(3, 0, 1, 2)     # ch, depth, H, W
+            input_mat = X.permute(3, 0, 1, 2)       # transpose a 4D torch Tensor
+            #input_mat = np.expand_dims(input_mat, axis=0)
+            input_mat = input_mat.unsqueeze(0)      # expand dims on Tensor
+            #input_mat = np.float32(input_mat)
             
             # Convert to Variable
-            input_mat = torch.from_numpy(input_mat)
+            #input_mat = torch.from_numpy(input_mat)
             input_mat = Variable(input_mat)
+#            if onGPU:
+#                input_mat = input_mat.cuda()
             
             # get the prediction after passing the input to the C3D model
             prediction = model(input_mat)
@@ -272,6 +296,9 @@ def getC3DFrameFeats(model, srcVideoPath, depth):
 
 
 if __name__=='__main__':
+    onGPU = True    # Flag True if we want a GPU extract (Serial),
+    # False if we want a parallel extraction on the CPU cores.
+    
     # create a model 
     import model_c3d as c3d
     
@@ -279,19 +306,12 @@ if __name__=='__main__':
     
     ###########################################################################
     
-    # load a clip to be predicted
-    
-    #X = X.cuda()
-
     # get network pretrained model
     model.load_state_dict(torch.load('c3d.pickle'))
-    #model.cuda()
+    if onGPU:
+        model.cuda()
+        
     model.eval()
-
-    # perform prediction
-    #prediction = model(X)
-    #prediction = prediction.data.cpu().numpy()
-
 
     # The srcPath should have subfolders that contain the training, val, test videos.
     #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
@@ -302,6 +322,7 @@ if __name__=='__main__':
         destPath = "/home/arpan/VisionWorkspace/localization_rnn/c3d_feats_16"
     
     start = time.time()
-    d = extract_c3d_all(model, srcPath, destPath, depth=16, stop='all')
+    nfiles = extract_c3d_all(model, srcPath, destPath, onGPU=onGPU, depth=16, stop='all')
     end = time.time()
+    print "Total no. of files traversed : "+str(nfiles)
     print "Total execution time : "+str(end-start)

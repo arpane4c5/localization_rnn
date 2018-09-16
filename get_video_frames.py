@@ -21,8 +21,10 @@ import os
 
 # Local system
 # contains subfolders and videos inside the subfolders
-DATASET_PATH = "/home/hadoop/VisionWorkspace/VideoData/UCF/UCF-101/"
-DESTPATH = "/home/hadoop/VisionWorkspace/VideoData/UCF/frm"
+#DATASET_PATH = "/home/hadoop/VisionWorkspace/VideoData/UCF/UCF-101/"
+DATASET_PATH = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+#DESTPATH = "/home/hadoop/VisionWorkspace/VideoData/UCF/frm"
+DESTPATH = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/frms"
 
 # server 
 if os.path.exists("/home/arpan/DATA_Drive/video_datasets/UCF/UCF-101"):
@@ -59,12 +61,20 @@ if __name__ == '__main__':
     
     nacts = 0
     
-    for sf in actions_list:
-        vids_list = os.listdir(os.path.join(DATASET_PATH, sf))
-        for video in vids_list:
-            extract_frames(os.path.join(DATASET_PATH, sf), \
-                       os.path.join(DESTPATH, sf), video)
-            break
+#    for sf in actions_list:
+#        vids_list = os.listdir(os.path.join(DATASET_PATH, sf))
+#        for video in vids_list:
+#            extract_frames(os.path.join(DATASET_PATH, sf), \
+#                       os.path.join(DESTPATH, sf), video)
+#            break
+#        nacts +=1
+#        if nacts==2:
+#            break
+    
+    # Extracting from one cricket sample video
+    for video in actions_list:
+        extract_frames(DATASET_PATH, DESTPATH, video)
+        break
         nacts +=1
         if nacts==2:
             break

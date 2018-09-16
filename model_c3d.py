@@ -68,13 +68,13 @@ class C3D(nn.Module):
         h = self.relu(self.fc6(h))
         h = self.dropout(h)
         h = self.relu(self.fc7(h))
-        #h = self.dropout(h)
+        h = self.dropout(h)
 
-        return h
-        #logits = self.fc8(h)
-        #probs = self.softmax(logits)
+        #return h
+        logits = self.fc8(h)
+        probs = self.softmax(logits)
 
-        #return probs
+        return probs
     
 """
 References

@@ -63,14 +63,14 @@ def count_parameters(model):
 
 
 
-def get_sport_clip(clip_name, verbose=True):
+def get_sport_clip(frames_list, verbose=True):
     """
     Loads a clip to be fed to C3D for classification.
     TODO: should I remove mean here?
     
     Parameters
     ----------
-    clip_name: str
+    clip_name: str      OR frames_list : list of consecutive N framePaths
         the name of the clip (subfolder in 'data').
     verbose: bool
         if True, shows the unrolled clip (default is True).
@@ -81,8 +81,8 @@ def get_sport_clip(clip_name, verbose=True):
         a pytorch batch (n, ch, fr, h, w).
     """
 
-    clip = sorted(glob(os.path.join('data', clip_name, '*.jpg')))
-    clip = np.array([resize(io.imread(frame), output_shape=(112, 200), preserve_range=True) for frame in clip])
+    #clip = sorted(glob(os.path.join('data', clip_name, '*.jpg')))
+    clip = np.array([resize(io.imread(frame), output_shape=(112, 200), preserve_range=True) for frame in frames_list])
     clip = clip[:, :, 44:44+112, :]  # crop centrally
 
     if verbose:
@@ -141,29 +141,36 @@ if __name__=='__main__':
     # 
 
     ###########################################################################
-    
-    # load a clip to be predicted
-    X = get_sport_clip('TaiChi/v_TaiChi_g18_c01', verbose=False)
-    X = Variable(X)
-    #X = X.cuda()
+    # read labels
+    labels = read_labels_from_file('labels.txt')
 
+    # load a clip to be predicted
+    clip_name = "ICC WT20 Australia vs Bangladesh - Match Highlights"
+    N = 16
+    #X = get_sport_clip('TaiChi/v_TaiChi_g18_c01', verbose=False)
+    
+    frames_list = sorted(glob(os.path.join('data', clip_name, '*.jpg')))
+    totalFrames = len(frames_list)
     # get network pretrained model
     model.load_state_dict(torch.load('c3d.pickle'))
     #model.cuda()
     model.eval()
 
-    # perform prediction
-    prediction = model(X)
-    prediction = prediction.data.cpu().numpy()
+    # call for each 
+    for i in range(len(frames_list)-N+1):
+        X = get_sport_clip(frames_list[i:i+N], verbose = False)
+        X = Variable(X)
+        #X = X.cuda()
 
-#    # read labels
-#    labels = read_labels_from_file('labels.txt')
-#
-##    # print top predictions
-##    top_inds = prediction[0].argsort()[::-1][:5]  # reverse sort and take five largest items
-##    print('\nTop 5:')
-##    for i in top_inds:
-##        print('{:.5f} {}'.format(prediction[0][i], labels[i]))
+        # perform prediction
+        prediction = model(X)
+        prediction = prediction.data.cpu().numpy()
+
+        # print top predictions
+        top_inds = prediction[0].argsort()[::-1][:5]  # reverse sort and take five largest items
+        print('\nTop 5: {} / {}'.format(i+1, totalFrames))
+        for i in top_inds:
+            print('{:.5f} {}'.format(prediction[0][i], labels[i]))
 #
 #    #####################################################################
 #    # Divide the samples files into training set, validation and test sets
