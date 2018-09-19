@@ -158,6 +158,36 @@ def readAllHOGfeatures(HOGfeaturesPath, keys):
     print "Features loaded into dictionary ..."
     return feats
         
+def readAllC3Dfeatures(c3dFeaturesPath, keys):
+    """
+    Load the c3d features of the train/val/test set into a dictionary. Dictionary 
+    has key as the filename(without ext) of video and value as the numpy feature 
+    matrix.
+    
+    Parameters:
+    ------
+    c3dFeaturesPath: str
+        path till the binary files of c3d features
+    keys: list of strings
+        list of filenames (without ext), which will be keys in the dictionary
+        and the corresponding files are the c3d numpy dumps.
+    
+    Returns:
+    ------
+    feats: dict
+        a dictionary of key: numpy matrix of size (N-16+1 x 1 x 4096) 
+        where N is the total number of frames in video, 16 is the number of frames
+        sent to c3d pretrained model for feature extraction (extract_c3d_feats.py)
+    """
+    feats = {}
+    for k in keys:
+        featpath = os.path.join(c3dFeaturesPath, k)+".npy"
+        with open(featpath, "rb") as fobj:
+            feats[k] = np.load(fobj)
+            
+    print "Features loaded into dictionary ..."
+    return feats
+
 def readAllNumpyFrames(numpyFramesPath, keys):
     """
     Load the frames of the train/val/test set into a dictionary. Dictionary 
@@ -201,7 +231,7 @@ def getFeatureVectorsFromDump(features, videoFiles, sequences, motion=True):
         
     return batch_feats
 
-def getC3DFeatures(c3d_model, frames, videoFiles, sequences):
+def getC3DFeatures(features, videoFiles, sequences):
     """
     Select the batch frames from the dictionary of numpy frames (corresponding
     to the given sequences) and extract C3D feature vector from them (fc7 layer)

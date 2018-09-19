@@ -12,3 +12,4 @@ vid/
 c3d.pickle
 data/
 numpy_frames_cropped/
+c3d_feats_16/
