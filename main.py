@@ -44,7 +44,7 @@ BATCH_SIZE = 256
 N_EPOCHS = 100
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 16
+SEQ_SIZE = 17   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
 seq_threshold = 0.5
 
@@ -223,7 +223,7 @@ if __name__=='__main__':
     print("Loading features from disk...")
     #frames = utils.readAllNumpyFrames(framesPath, train_lst)
     #HOGfeatures = utils.readAllHOGfeatures(HOGfeaturesPath, train_lst)
-    c3dfeats = utils.readAllc3dFeatures(c3dFeaturesPath, train_lst)
+    c3dfeats = utils.readAllC3DFeatures(c3dFeaturesPath, train_lst)
     print(len(train_loader.dataset))
     
     ########
@@ -256,12 +256,14 @@ if __name__=='__main__':
             # Run your training process
             #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
             #feats = getFeatureVectors(DATASET, keys, seqs)   # Takes time. Do not use
+            # get a list of seq_size x 4096 matrices, for this batch. 
+            # no. of matrices in list is the size of the batch
             batchFeats = utils.getC3DFeatures(c3dfeats, keys, seqs)
             #batchFeats = utils.getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
             #break
 
             # Training starts here
-            inputs, target = utils.make_variables(batchFeats, labels, motion=True)
+            inputs, target = utils.make_c3d_variables(batchFeats, labels)
             #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
             output = classifier(inputs)
 
@@ -324,7 +326,7 @@ if __name__=='__main__':
     val_labs = [os.path.join(LABELS, f) for f in val_lab]
     val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
     print "Size : {}".format(val_sizes)
-    hlvalDataset = VideoDataset(val_labs, val_sizes, is_train_set = False)
+    hlvalDataset = VideoDataset(val_labs, val_sizes, seq_size=SEQ_SIZE, is_train_set = False)
     print hlvalDataset.__len__()
     
     # Create a DataLoader object and sample batches of examples. 
@@ -337,7 +339,7 @@ if __name__=='__main__':
     print "Loading validation/test features from disk..."
     #OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, test_lst)
     #HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)   
-    c3dValFeatures = utils.readAllc3dFeatures(c3dFeaturesPath, val_lst)
+    c3dValFeatures = utils.readAllC3DFeatures(c3dFeaturesPath, val_lst)
     print("Predicting on the validation/test videos...")
     for i, (keys, seqs, labels) in enumerate(val_loader):
         
@@ -348,7 +350,7 @@ if __name__=='__main__':
         batchFeats = utils.getC3DFeatures(c3dValFeatures, keys, seqs)
         #break
         # Validation stage
-        inputs, target = utils.make_variables(batchFeats, labels, motion=True)
+        inputs, target = utils.make_c3d_variables(batchFeats, labels)
         #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
         output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
 

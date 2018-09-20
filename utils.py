@@ -158,7 +158,7 @@ def readAllHOGfeatures(HOGfeaturesPath, keys):
     print "Features loaded into dictionary ..."
     return feats
         
-def readAllC3Dfeatures(c3dFeaturesPath, keys):
+def readAllC3DFeatures(c3dFeaturesPath, keys):
     """
     Load the c3d features of the train/val/test set into a dictionary. Dictionary 
     has key as the filename(without ext) of video and value as the numpy feature 
@@ -249,15 +249,56 @@ def getC3DFeatures(features, videoFiles, sequences):
             
         start_frame = sequences[0][i]   # starting point of sequences in video
         end_frame = sequences[1][i]     # end point
+        # verify
+        assert (end_frame-start_frame+1)>=16, "SEQ_SIZE should be greater than 16"
+        
         # Load features
-        # (N-1) sized list of vectors of 1152 dim
+        # (N-16+1 x 1 x 4096) sized numpy array
         vidFeats = features[videoFile]  
-        
-        vid_frames_seq = vidFeats[start_frame:(end_frame+1)]
-        
+        # extract (seq_size-15) x 1 x 4096 matrix and append to 
+        vid_frames_seq = vidFeats[start_frame:(end_frame-15+1), :, :]
+        # dissolve the single-dimension, result is list of (seq_size-15) x 4096 
+        if vid_frames_seq.shape[0] > 1:     # if shape not (1, 4096)
+            vid_frames_seq = np.squeeze(vid_frames_seq)
         batch_feats.append(vid_frames_seq)
         
     return batch_feats
+
+
+# should be called only for seq_len >=16
+def make_c3d_variables(feats, labels):
+    # Create the input tensors and target label tensors
+    #for item in feats:
+        # item is a list with (sequence of) 9 1D vectors (each of 1152 size)
+    # form a tensor of size = (batch x (seq_size-16) x feat_size) eg (256 x 1 x 4096)
+    #feats = torch.Tensor(feats)  # Runtime error: https://github.com/pytorch/pytorch/issues/2246
+    feats = torch.Tensor(np.array(feats).astype(np.double))
+    feats[feats==float("-Inf")] = 0
+    feats[feats==float("Inf")] = 0
+    # Form the target labels 
+    target = []
+#    for i in range(labels[0].size(0)):
+#        if labels[0][i]<5:
+#            target.append(0)
+#        else:
+#            target.append(1)
+
+#   Improve this portion (check which have to be actions and which non-actions)
+
+    for i in range(labels[0].size(0)):
+        if labels[1][i] == 0:         # completely part of non-action
+            target.extend([0]*(labels[0][i]-15))
+        elif labels[0][i] == 0:     # completely part of action
+            target.extend([1]*(labels[1][i]-15))
+        else:                       # partially in action, rest non-action
+            if labels[0][i] > labels[1][i]:     # if mainly part of non-action
+            # need it to be of size 16 less than the total (correct this)
+                target.extend([0]*(labels[0][i] + labels[1][i] -15))     
+            else:
+                target.extend([1]*(labels[0][i] + labels[1][i] -15))
+        
+    # Form a wrap into a tensor variable as B X S X I
+    return create_variable(feats), create_variable(torch.Tensor(target))    
 
 # Inputs: feats: list of lists
 def make_variables(feats, labels, motion=True):
