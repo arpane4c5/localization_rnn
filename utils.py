@@ -277,25 +277,26 @@ def make_c3d_variables(feats, labels):
     feats[feats==float("Inf")] = 0
     # Form the target labels 
     target = []
-#    for i in range(labels[0].size(0)):
-#        if labels[0][i]<5:
-#            target.append(0)
-#        else:
-#            target.append(1)
 
-#   Improve this portion (check which have to be actions and which non-actions)
-
+#   Append the sequence of labels of len (seq_size-16+1) to the target list.
+    # Iterate over the batch labels, for each extract seq_size labels and extend 
+    # in the target list
+    seq_size = len(labels)  
     for i in range(labels[0].size(0)):
-        if labels[1][i] == 0:         # completely part of non-action
-            target.extend([0]*(labels[0][i]-15))
-        elif labels[0][i] == 0:     # completely part of action
-            target.extend([1]*(labels[1][i]-15))
-        else:                       # partially in action, rest non-action
-            if labels[0][i] > labels[1][i]:     # if mainly part of non-action
-            # need it to be of size 16 less than the total (correct this)
-                target.extend([0]*(labels[0][i] + labels[1][i] -15))     
-            else:
-                target.extend([1]*(labels[0][i] + labels[1][i] -15))
+        lbs = [y[i] for y in labels]      # get labels of frames (size seq_size)
+        temp = [1 if sum(lbs[s:e])>=8 else 0 for s,e in enumerate(range(16, seq_size+1))]
+        target.extend(temp)   # for c3d
+        
+#        if labels[1][i] == 0:         # completely part of non-action
+#            target.extend([0]*(labels[0][i]-15))
+#        elif labels[0][i] == 0:     # completely part of action
+#            target.extend([1]*(labels[1][i]-15))
+#        else:                       # partially in action, rest non-action
+#            if labels[0][i] > labels[1][i]:     # if mainly part of non-action
+#            # need it to be of size 16 less than the total (correct this)
+#                target.extend([0]*(labels[0][i] + labels[1][i] -15))     
+#            else:
+#                target.extend([1]*(labels[0][i] + labels[1][i] -15))
         
     # Form a wrap into a tensor variable as B X S X I
     return create_variable(feats), create_variable(torch.Tensor(target))    
@@ -316,7 +317,8 @@ def make_variables(feats, labels, motion=True):
 #            target.append(0)
 #        else:
 #            target.append(1)
-            
+    
+    #target.extend([y[i] for y in labels])   # for HOG
     for i in range(labels[0].size(0)):
         if labels[0][i]>0:
             if motion:

@@ -44,7 +44,7 @@ BATCH_SIZE = 256
 N_EPOCHS = 100
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 17   # has to >=16 (ie. the number of frames used for c3d input)
+SEQ_SIZE = 18   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
 seq_threshold = 0.5
 
@@ -228,15 +228,15 @@ if __name__=='__main__':
     
     ########
     
-    INP_VEC_SIZE = 4096 # change to the fc7 layer output size
-    #INP_VEC_SIZE = len(HOGfeatures[HOGfeatures.keys()[0]][0])   # list of vals
+    #fc7 layer output size
+    INP_VEC_SIZE = c3dfeats[c3dfeats.keys()[0]].shape[-1] 
     print("INP_VEC_SIZE = ", INP_VEC_SIZE)
     
     # Creating the RNN and training
     classifier = RNNClassifier(INP_VEC_SIZE, HIDDEN_SIZE, 1, N_LAYERS)
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
+        # Parallely run on multiple GPUs using DataParallel
         classifier = nn.DataParallel(classifier)
 
     if torch.cuda.is_available():
@@ -259,7 +259,6 @@ if __name__=='__main__':
             # get a list of seq_size x 4096 matrices, for this batch. 
             # no. of matrices in list is the size of the batch
             batchFeats = utils.getC3DFeatures(c3dfeats, keys, seqs)
-            #batchFeats = utils.getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
             #break
 
             # Training starts here
@@ -410,3 +409,8 @@ if __name__=='__main__':
         json.dump(filtered_shots, fp)
     print("Prediction file written to disk !!")
     #####################################################################
+    # count no. of parameters in the model
+    #model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+    #params = sum([np.prod(p.size()) for p in model_parameters])
+    # or call count_paramters(model)  
+    print "#Parameters : {} ".format(count_parameters(classifier))

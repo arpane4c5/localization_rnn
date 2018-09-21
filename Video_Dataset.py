@@ -68,25 +68,25 @@ class VideoDataset(Dataset):
             # Iterate over the list of tuples and form labels for each sequence
             for t in range(vidsSizes[i]-seq_size+1):
                 if t <= (start-seq_size):
-                    self.labels.append([seq_size, 0])   # all 0's 
+                    self.labels.append([0]*seq_size)   # all 0's 
                 elif t < start:
-                    self.labels.append([start-t, t+seq_size-start])
-                elif t <= (end+1 - seq_size):
-                    self.labels.append([0, seq_size])
+                    self.labels.append([0]*(start-t)+[1]*(t+seq_size-start))
+                elif t <= (end+1 - seq_size):       # all 1's
+                    self.labels.append([1]*seq_size)
                 elif t <= end:
-                    self.labels.append([t+seq_size-(end+1), end+1-t])
+                    self.labels.append([1]*(end+1-t) + [0]*(t+seq_size-(end+1)) )
                 else:
                     if len(pos) > 0:
                         (start, end) = pos.pop()
                         if t <= (start-seq_size):
-                            self.labels.append([seq_size, 0])
+                            self.labels.append([0]*seq_size)
                         elif t < start:
-                            self.labels.append([start-t, t+seq_size-start])
+                            self.labels.append([0]*(start-t) + [1]*(t+seq_size-start))
                         elif t <= (end+1 - seq_size):       # Check if more is needed
-                            self.labels.append([0, seq_size])
+                            self.labels.append([1]*seq_size)
                     else:
                         # For last part with non-action frames
-                        self.labels.append([seq_size, 0])
+                        self.labels.append([0]*seq_size)
                     
             #if is_train_set:
                 # remove values with transitions eg (1, 9), (8, 2) etc
@@ -106,28 +106,3 @@ class VideoDataset(Dataset):
     def __seq_size__(self):
         return self.seq_size
     
-#    def get_countries(self):
-#        return self.country_list
-#
-#    def get_country(self, id):
-#        return self.country_list[id]
-#
-#    def get_country_id(self, country):
-#        return self.country_list.index(country)
-
-# Test the loader
-#if __name__ == "__main__":
-#    dataset = VideoDataset(False)
-#    print(dataset.get_countries())
-#    print(dataset.get_country(3))
-#    print(dataset.get_country_id('Korean'))
-#
-#    train_loader = DataLoader(dataset=dataset,
-#                              batch_size=10,
-#                              shuffle=True)
-#
-#    print(len(train_loader.dataset))
-#    for epoch in range(2):
-#        for i, (names, countries) in enumerate(train_loader):
-#            # Run your training process
-#            print(epoch, i, "names", names, "countries", countries)
