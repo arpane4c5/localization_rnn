@@ -23,8 +23,6 @@ from Video_Dataset import VideoDataset
 from model_gru import RNNClassifier
 from torch.autograd import Variable
 from glob import glob
-import skimage.io as io
-from skimage.transform import resize
 
 
 # Local Paths
@@ -41,79 +39,12 @@ THRESHOLD = 0.5
 HIDDEN_SIZE = 1000
 N_LAYERS = 1
 BATCH_SIZE = 256
-N_EPOCHS = 100
+N_EPOCHS = 30
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 18   # has to >=16 (ie. the number of frames used for c3d input)
+SEQ_SIZE = 29   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
 seq_threshold = 0.5
-
-
-def train_model(model, destpath):
-    train_files = sorted(os.listdir(DATASET))
-    labels = sorted(os.listdir(LABELS))
-    
-    print train_files
-    print labels
-
-# function to count the number of parameters in the model
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-
-def get_sport_clip(frames_list, verbose=True):
-    """
-    Loads a clip to be fed to C3D for classification.
-    TODO: should I remove mean here?
-    
-    Parameters
-    ----------
-    clip_name: str      OR frames_list : list of consecutive N framePaths
-        the name of the clip (subfolder in 'data').
-    verbose: bool
-        if True, shows the unrolled clip (default is True).
-
-    Returns
-    -------
-    Tensor
-        a pytorch batch (n, ch, fr, h, w).
-    """
-
-    #clip = sorted(glob(os.path.join('data', clip_name, '*.jpg')))
-    clip = np.array([resize(io.imread(frame), output_shape=(112, 200), preserve_range=True) for frame in frames_list])
-    clip = clip[:, :, 44:44+112, :]  # crop centrally
-
-    if verbose:
-        clip_img = np.reshape(clip.transpose(1, 0, 2, 3), (112, 16 * 112, 3))
-        io.imshow(clip_img.astype(np.uint8))
-        io.show()
-
-    clip = clip.transpose(3, 0, 1, 2)  # ch, fr, h, w
-    clip = np.expand_dims(clip, axis=0)  # batch axis
-    clip = np.float32(clip)
-
-    return torch.from_numpy(clip)
-
-
-def read_labels_from_file(filepath):
-    """
-    Reads Sport1M labels from file
-    
-    Parameters
-    ----------
-    filepath: str
-        the file.
-        
-    Returns
-    -------
-    list
-        list of sport names.
-    """
-    with open(filepath, 'r') as f:
-        labels = [line.strip() for line in f.readlines()]
-    return labels
-
 
 
 if __name__=='__main__':
@@ -141,12 +72,12 @@ if __name__=='__main__':
 #
 #    ###########################################################################
 #    # read labels
-#    labels = read_labels_from_file('labels.txt')
+#    labels = utils.read_labels_from_file('labels.txt')
 #
 #    # load a clip to be predicted
 #    clip_name = "ICC WT20 Australia vs Bangladesh - Match Highlights"
 #    N = 16
-#    #X = get_sport_clip('TaiChi/v_TaiChi_g18_c01', verbose=False)
+#    #X = utils.get_sport_clip('TaiChi/v_TaiChi_g18_c01', verbose=False)
 #    
 #    frames_list = sorted(glob(os.path.join('data', clip_name, '*.jpg')))
 #    totalFrames = len(frames_list)
@@ -157,7 +88,7 @@ if __name__=='__main__':
 #
 #    # call for each 
 #    for i in range(len(frames_list)-N+1):
-#        X = get_sport_clip(frames_list[i:i+N], verbose = False)
+#        X = utils.get_sport_clip(frames_list[i:i+N], verbose = False)
 #        X = Variable(X)
 #        #X = X.cuda()
 #
@@ -413,4 +344,4 @@ if __name__=='__main__':
     #model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     #params = sum([np.prod(p.size()) for p in model_parameters])
     # or call count_paramters(model)  
-    print "#Parameters : {} ".format(count_parameters(classifier))
+    print "#Parameters : {} ".format(utils.count_parameters(classifier))
