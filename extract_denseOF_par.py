@@ -9,6 +9,8 @@ Created on Sat June 30 01:34:25 2018
 from folder videos and dump to disk.
 
 Feature : Farneback Dense Optical Flow: Magnitudes and Angles (with grid_size)
+Execution Time: 1365.583 secs (Njobs=10, batch=10) (nVids = 26)
+Execution Time: 1420.7 secs (Njobs=10, batch=10) (nVids=26) grid=40
 
 """
 
@@ -17,16 +19,35 @@ import numpy as np
 import cv2
 import time
 import pandas as pd
-import pickle
 from joblib import Parallel, delayed
+
+def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, njobs=1, batch=10, stop='all'):
+    """
+    Function to extract the features from a list of videos, given the path of the
+    videos and the destination path for the features
     
-# function to extract the features from a list of videos
-# Params: srcFolderPath = path to folder which contains the videos
-# destFolderPath: path to store the optical flow values in .bin files
-# grid_size: distance between two neighbouring pixel optical flow values.
-# stop: to traversel 'stop' no of files in each subdirectory.
-# Return: traversed: no of videos traversed successfully
-def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all'):
+    Parameters:
+    ------
+    srcFolderPath: str
+        path to folder which contains the videos
+    destFolderPath: str
+        path to store the optical flow values in .npy files
+    grid_size: int
+        distance between two neighbouring pixel optical flow values.
+    njobs: int
+        no. of cores to be used parallely
+    batch: int
+        no. of video files in a batch. A batch executed parallely and 
+        is dumped to disk before starting another batch. Depends on RAM.
+    stop: str or int(if to be stopped after some files)
+        to traversel 'stop' no of files in each subdirectory.
+    
+    Return: 
+    ------
+    traversed: int
+        no of videos traversed successfully
+    """
+    
     # iterate over the subfolders in srcFolderPath and extract for each video 
     vfiles = os.listdir(srcFolderPath)
     
@@ -45,9 +66,8 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
             nFrames.append(getTotalFramesVid(os.path.join(srcFolderPath, vid)))
             # save at the destination, if extracted successfully
             traversed += 1
-#            print "Done "+str(traversed_tot+traversed)+" : "+sf+"/"+vid
-                    
-                # to stop after successful traversal of 2 videos, if stop != 'all'
+                   
+            # to stop after successful traversal of 2 videos, if stop != 'all'
             if stop != 'all' and traversed == stop:
                 break
                     
@@ -61,8 +81,6 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 10  # No. of videos in a single batch
-    njobs = 10   # No. of threads
     
     for i in range(nrows/batch):
         # 
@@ -70,11 +88,9 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
                           (filenames_df['infiles'][i*batch+j], grid_size) \
                           for j in range(batch))
         
-        # Writing the diffs in a serial manner
+        # Writing the files to the disk in a serial manner
         for j in range(batch):
             if batch_diffs[j] is not None:
-#                with open(filenames_df['outfiles'][i*batch+j] , "wb") as fp:
-#                    pickle.dump(batch_diffs[j], fp)
                 np.save(filenames_df['outfiles'][i*batch+j], batch_diffs[j])
                 print "Written "+str(i*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][i*batch+j]
@@ -85,58 +101,70 @@ def extract_dense_OF_vids(srcFolderPath, destFolderPath, grid_size=20, stop='all
         batch_diffs = Parallel(n_jobs=njobs)(delayed(getFarnebackOFVideo) \
                               (filenames_df['infiles'][(nrows/batch)*batch+j], grid_size) \
                               for j in range(last_batch_size)) 
-        # Writing the diffs in a serial manner
+        # Writing the files to the disk in a serial manner
         for j in range(last_batch_size):
             if batch_diffs[j] is not None:
-#                with open(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb") as fp:
-#                    pickle.dump(batch_diffs[j], fp)
                 np.save(filenames_df['outfiles'][(nrows/batch)*batch+j], batch_diffs[j])
                 print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][(nrows/batch)*batch+j]
     
     ###########################################################################
     return traversed
-#    for idx, vid in enumerate(vids_lst):
-#        #get_hist_diff(os.path.join(DATASET, vid+'.avi'))
-#        diffs = getHistogramOfVideo(os.path.join(DATASET, vid+'.avi'), "", 100)
-#        #print "diffs : ",diffs
-#        print "Done : " + str(idx+1)
-#        hist_diff_all.append(diffs)
-#        # save diff_hist to disk    
-#        #outfile = file(os.path.join(destPath,"diff_hist.bin"), "wb")
-#        #np.save(outfile, diffs)
-#        #outfile.close()    
-#        #break
-#    return hist_diff_all
 
-# return the total number of frames in the video
+
 def getTotalFramesVid(srcVideoPath):
+    """
+    Return the total number of frames in the video
+    Parameter:
+    ------
+    srcVideoPath: str
+        complete path to the video file
+        
+    Returns: 
+    ------
+    tot_frames: int
+        total number of frames in the video file.
+    """
     cap = cv2.VideoCapture(srcVideoPath)
-    # if the videoCapture object is not opened then exit without traceback
+    # if the videoCapture object is not opened then return 0 frames
     if not cap.isOpened():
         print("Error reading the video file !!")
         return 0
 
     tot_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     cap.release()
-    return tot_frames    
+    return tot_frames
 
-# function to get the Farneback dense optical flow features for the video file
-# and sample magnitude and angle features with a distance of grid_size between 
-# two neighbours.
-# Copied and editted from shot_detection.py script
-# color=('b') : For grayscale, ('b','g','r') for RGB
+
 def getFarnebackOFVideo(srcVideoPath, grid_size):
+    """
+    Function to get the Farneback dense optical flow features for the video file
+    and sample magnitude and angle features with a distance of grid_size between 
+    two neighbours.
+    Copied and editted from shot_detection.py script
+    
+    Parameters:
+    ------
+    srcVideoPath: str
+        complete path of a video file
+    grid_size: int
+        distance between two consecutive sampling pixels.
+    
+    Returns:
+    ------
+    np.ndarray of dimension (N-1, 2 x (360/grid_size) x (640/grid_size))
+    """
     # get the VideoCapture object
     cap = cv2.VideoCapture(srcVideoPath)
     
-    # if the videoCapture object is not opened then exit without traceback
+    # if the videoCapture object is not opened then return None
     if not cap.isOpened():
         print("Error reading the video file !!")
         return None
     
-    dimensions = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+#    dimensions = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), \
+#                  int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+#    totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     frameCount = 0
     features_current_file = []
     
@@ -163,27 +191,32 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
         #feature.append(sliced_flow[..., 0].ravel())
         #feature.append(sliced_flow[..., 1].ravel())
         # saving as a list of float values (after converting into 1D array)
-        #features_current_file.append(sliced_flow.ravel().tolist())
+        #features_current_file.append(sliced_flow.ravel().tolist())   #slow at load time
+        # convert to (1, 2x(H/grid)x(W/grid)) matrix.
+        sliced_flow = np.expand_dims(sliced_flow.flatten(), axis=0)
         features_current_file.append(sliced_flow)
         prev_frame = curr_frame
 
-    # When everything done, release the capture
     cap.release()
     #print "{}/{} frames in {}".format(frameCount, totalFrames, srcVideoPath)
-    return np.array(features_current_file)
+    return np.array(features_current_file)  # (N-1, 1, 2x(H/grid)x(W/grid))
 
 
 if __name__=='__main__':
-    # The srcPath should have subfolders that contain the training, val, test videos.
-    # The function iterates over the subfolders and videos inside that.
-    # The destPath will be created and inside that directory structure similar 
-    # to src path will be created, with binary files containing the features.
-    gridSize = 20
+    
+    gridSize = 40
+    batch = 10  # No. of videos in a single batch
+    njobs = 10   # No. of threads
+    # Server params
     srcPath = '/opt/datasets/cricket/ICC_WT20'
-    #srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    destPath = "/home/arpan/VisionWorkspace/localization_rnn/OF_grid_new_"+str(gridSize)
-    #destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/OF_grid"+str(gridSize)
+    destPath = "/home/arpan/VisionWorkspace/localization_rnn/OF_npy_grid"+str(gridSize)
+    # localhost params
+    if not os.path.exists(srcPath):
+        srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+        destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/OF_npy_grid"+str(gridSize)
+        
     start = time.time()
-    extract_dense_OF_vids(srcPath, destPath, grid_size=gridSize, stop='all')
+    extract_dense_OF_vids(srcPath, destPath, gridSize, njobs, batch, stop='all')
     end = time.time()
     print "Total execution time : "+str(end-start)
+    

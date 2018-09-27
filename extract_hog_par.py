@@ -4,7 +4,7 @@
 Created on Sat June 30 01:34:25 2018
 @author: Arpan
 @Description: Utils file to extract HOG features from folder videos and dump 
-to disk.
+to disk.(Parallelized Version)
 Feature : Histogram of Oriented Gradients
 """
 
@@ -13,16 +13,33 @@ import numpy as np
 import cv2
 import time
 import pandas as pd
-import pickle
 from joblib import Parallel, delayed
+
+def extract_hog_vids(srcFolderPath, destFolderPath, hog, njobs=1, batch=10, stop='all'):
+    """
+    Function to extract the HOG features from a list of videos, parallely.
     
-# function to extract the features from a list of videos
-# Params: srcFolderPath = path to folder which contains the videos
-# destFolderPath: path to store the optical flow values in .bin files
-# grid_size: distance between two neighbouring pixel optical flow values.
-# stop: to traversel 'stop' no of files in each subdirectory.
-# Return: traversed: no of videos traversed successfully
-def extract_hog_vids(srcFolderPath, destFolderPath, hog, stop='all'):
+    Parameters: 
+    ------
+    srcFolderPath: str
+        complete path to folder which contains the videos
+    destFolderPath: str
+        path to store the optical flow values in .npy files
+    hog: cv2.HOGDescriptor
+        Object reference to the HOGDescriptor to be used for HOG extraction.
+    njobs: int
+        no. of cores to be used parallely
+    batch: int
+        no. of video files in a batch. A batch executed parallely and 
+        is dumped to disk before starting another batch. Depends on RAM.
+    stop: str or int(if to be stopped after some files)
+        to traversel 'stop' no of files in each subdirectory.
+    
+    Return: 
+    ------
+    traversed: int
+        no of videos traversed successfully
+    """
     # iterate over the subfolders in srcFolderPath and extract for each video 
     vfiles = os.listdir(srcFolderPath)
     
@@ -37,7 +54,7 @@ def extract_hog_vids(srcFolderPath, destFolderPath, hog, stop='all'):
     for vid in vfiles:
         if os.path.isfile(os.path.join(srcFolderPath, vid)) and vid.rsplit('.', 1)[1] in {'avi', 'mp4'}:
             infiles.append(os.path.join(srcFolderPath, vid))
-            outfiles.append(os.path.join(destFolderPath, vid.rsplit('.',1)[0]+".bin"))
+            outfiles.append(os.path.join(destFolderPath, vid.rsplit('.', 1)[0]+".npy"))
             nFrames.append(getTotalFramesVid(os.path.join(srcFolderPath, vid)))
             # save at the destination, if extracted successfully
             traversed += 1
@@ -57,8 +74,6 @@ def extract_hog_vids(srcFolderPath, destFolderPath, hog, stop='all'):
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 1  # No. of videos in a single batch
-    njobs = 1   # No. of threads
     
     for i in range(nrows/batch):
         #batch_diffs = getHOGVideo(filenames_df['infiles'][i], hog)
@@ -70,8 +85,7 @@ def extract_hog_vids(srcFolderPath, destFolderPath, hog, stop='all'):
         # Writing the diffs in a serial manner
         for j in range(batch):
             if batch_diffs[j] is not None:
-                with open(filenames_df['outfiles'][i*batch+j] , "wb") as fp:
-                    pickle.dump(batch_diffs[j], fp)
+                np.save(filenames_df['outfiles'][i*batch+j], batch_diffs[j])
                 print "Written "+str(i*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][i*batch+j]
             
@@ -84,33 +98,55 @@ def extract_hog_vids(srcFolderPath, destFolderPath, hog, stop='all'):
         # Writing the diffs in a serial manner
         for j in range(last_batch_size):
             if batch_diffs[j] is not None:
-                with open(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb") as fp:
-                    pickle.dump(batch_diffs[j], fp)
+                np.save(filenames_df['outfiles'][(nrows/batch)*batch+j], batch_diffs[j])
                 print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
                                     filenames_df['outfiles'][(nrows/batch)*batch+j]
     
     ###########################################################################
-    print len(batch_diffs)
     return traversed
 
-
-# return the total number of frames in the video
 def getTotalFramesVid(srcVideoPath):
+    """
+    Return the total number of frames in the video
+    Parameter:
+    ------
+    srcVideoPath: str
+        complete path to the video file
+        
+    Returns: 
+    ------
+    tot_frames: int
+        total number of frames in the video file.
+    """
     cap = cv2.VideoCapture(srcVideoPath)
-    # if the videoCapture object is not opened then exit without traceback
+    # if the videoCapture object is not opened then return 0 frames
     if not cap.isOpened():
         print("Error reading the video file !!")
         return 0
 
     tot_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     cap.release()
-    return tot_frames    
+    return tot_frames
 
-# function to get the Farneback dense optical flow features for the video file
-# and sample magnitude and angle features with a distance of grid_size between 
-# two neighbours.
-# Copied and editted from shot_detection.py script
 def getHOGVideo(srcVideoPath, hog):
+    """
+    Function to get the HOG features for all the frames of a video file. 
+    The HOG parameters are defined in the hog.xml file. WinSize=64, BlockSize=32,
+    blockStride=8, cellSize=8 and nbins=9.
+    Copied and editted from shot_detection.py script
+    
+    Parameters: 
+    ------
+    srcVideoPath: str
+        complete path to a single video file.
+    hog: cv2.HOGDescriptor
+        Object reference for the HOG parameters.
+        
+    Returns: 
+    ------
+    features_current_file: np.ndarray
+    
+    """
     # get the VideoCapture object
     cap = cv2.VideoCapture(srcVideoPath)
     
@@ -119,49 +155,53 @@ def getHOGVideo(srcVideoPath, hog):
         print("Error reading the video file !!")
         return None
     
-    w, h = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    w, h = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), \
+            int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    #totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     frameCount = 0
     features_current_file = []
-    
     #ret, prev_frame = cap.read()
     assert cap.isOpened(), "Capture object does not return a frame!"
     #prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
     
     # Iterate over the entire video to get the optical flow features.
-    while(cap.isOpened()):
-        frameCount +=1
+    while cap.isOpened():
+        frameCount += 1
         ret, curr_frame = cap.read()
         if not ret:
             break
         curr_frame = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+        # Take the centre crop of the frames (64 x 64)
         curr_frame = curr_frame[(w/2-32):(w/2+32), (h/2-32):(h/2+32)]
-        #flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        # compute the HOG feature vector 
         hog_feature = hog.compute(curr_frame)   # vector
-        # saving as a list of float values (after converting into 1D array)
-        features_current_file.append(hog_feature.ravel().tolist())
+        # saving as a list of float matrices (dim 1 x vec_size)
+        hog_feature = np.expand_dims(hog_feature.flatten(), axis = 0)
+        features_current_file.append(hog_feature)
+        #features_current_file.append(hog_feature.ravel().tolist())
 
-    # When everything done, release the capture
     cap.release()
     #print "{}/{} frames in {}".format(frameCount, totalFrames, srcVideoPath)
-    return features_current_file
+    return np.array(features_current_file) # N x 1 x vec_size
 
 
-if __name__=='__main__':
-    # The srcPath should have subfolders that contain the training, val, test videos.
-    # The function iterates over the subfolders and videos inside that.
-    # The destPath will be created and inside that directory structure similar 
-    # to src path will be created, with binary files containing the features.
-    #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
-    srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/hog_feats_new"
+if __name__ == '__main__':
+    # For > 1 jobs, Pickling error due to call to Parallel and cannot serialize
+    batch = 4  # No. of videos in a single batch
+    njobs = 1   # No. of threads
+    
+    # Server params
+    srcPath = '/opt/datasets/cricket/ICC_WT20'
+    destPath = "/home/arpan/VisionWorkspace/localization_rnn/hog_feats_new"
+    
     if not os.path.exists(srcPath):
-        srcPath = "/opt/datasets/cricket/ICC_WT20"
-        destPath = "/home/arpan/VisionWorkspace/localization_rnn/hog_feat"
+        srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+        destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/hog_feats_new"
     
     hog_params_file = "hog.xml"     # in current dir
     hog = cv2.HOGDescriptor(hog_params_file)
     start = time.time()
-    extract_hog_vids(srcPath, destPath, hog, stop='all')
+    extract_hog_vids(srcPath, destPath, hog, njobs, batch, stop='all')
     end = time.time()
     print "Total execution time : "+str(end-start)
+    
