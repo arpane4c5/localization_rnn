@@ -131,16 +131,31 @@ def getFeatureVectors(datasetpath, videoFiles, sequences):
 
 def readAllOFfeatures(OFfeaturesPath, keys):
     """
-    Load the features of the train/val/test set into a dictionary. Dictionary 
+    Load the OF features of the train/val/test set into a dictionary. Dictionary 
     has key as the filename(without ext) of video and value as the numpy feature 
     matrix.
+    
+    Parameters:
+    ------
+    OFfeaturesPath: str
+        path till the binary files of OF features
+    keys: list of strings
+        list of filenames (without ext), which will be keys in the dictionary
+        and the corresponding files are the OF numpy dumps.
+    
+    Returns:
+    ------
+    feats: dict
+        a dictionary of key: numpy matrix of size (N-1 x 1 x (2x(H/grid)x(W/grid))) 
+        where N is the total number of frames in video, H=360, W=640 and grid is the
+        sampling distance between two consecutive pixels (refer extract_denseOF_par.py)
     """
     feats = {}
     for k in keys:
-        featpath = os.path.join(OFfeaturesPath, k)+".bin"
+        featpath = os.path.join(OFfeaturesPath, k)+".npy"
         assert os.path.exists(featpath), "featpath not found {}".format(featpath)
         with open(featpath, "rb") as fobj:
-            feats[k] = pickle.load(fobj)
+            feats[k] = np.load(fobj)
             
     print "Features loaded into dictionary ..."
     return feats
@@ -154,6 +169,7 @@ def readAllHOGfeatures(HOGfeaturesPath, keys):
     feats = {}
     for k in keys:
         featpath = os.path.join(HOGfeaturesPath, k)+".bin"
+        assert os.path.exists(featpath), "featpath not found {}".format(featpath)
         with open(featpath, "rb") as fobj:
             feats[k] = pickle.load(fobj)
             
@@ -184,6 +200,7 @@ def readAllC3DFeatures(c3dFeaturesPath, keys):
     feats = {}
     for k in keys:
         featpath = os.path.join(c3dFeaturesPath, k)+".npy"
+        assert os.path.exists(featpath), "featpath not found {}".format(featpath)
         with open(featpath, "rb") as fobj:
             feats[k] = np.load(fobj)
             
@@ -233,6 +250,36 @@ def getFeatureVectorsFromDump(features, videoFiles, sequences, motion=True):
         
     return batch_feats
 
+def getBatchFeatures(features, videoFiles, sequences, motion=True):
+    """Select only the batch features from the dictionary of features (corresponding
+    to the given sequences) and return them as a list of lists. 
+    OFfeatures: a dictionary of features {vidname: numpy matrix, ...}
+    videoFiles: the list of filenames for a batch
+    sequences: the start and end frame numbers in the batch videos to be sampled.
+    SeqSize should be >= 2 for atleast one vector in sequence.
+    """
+    #grid_size = 20
+    batch_feats = []
+    # Iterate over the videoFiles in the batch and extract the corresponding feature
+    for i, videoFile in enumerate(videoFiles):
+        # get key value for the video. Use this to read features from dictionary
+        videoFile = videoFile.split('/')[1].rsplit('.', 1)[0]
+            
+        start_frame = sequences[0][i]   # starting point of sequences in video
+        end_frame = sequences[1][i]     # end point
+        # Load features
+        # (N-1) sized list of vectors of 1152 dim
+        vidFeats = features[videoFile]  
+        if motion:
+            vid_feat_seq = vidFeats[start_frame:end_frame, :, :]
+        else:
+            vid_feat_seq = vidFeats[start_frame:(end_frame+1), :, :]
+        
+        vid_feat_seq = np.squeeze(vid_feat_seq, axis = 1)
+        batch_feats.append(vid_feat_seq)
+        
+    return batch_feats
+
 def getC3DFeatures(features, videoFiles, sequences):
     """
     Select the batch frames from the dictionary of numpy frames (corresponding
@@ -258,11 +305,10 @@ def getC3DFeatures(features, videoFiles, sequences):
         # (N-16+1 x 1 x 4096) sized numpy array
         vidFeats = features[videoFile]  
         # extract (seq_size-15) x 1 x 4096 matrix and append to 
-        vid_frames_seq = vidFeats[start_frame:(end_frame-15+1), :, :]
-        # dissolve the single-dimension, result is list of (seq_size-15) x 4096 
-        if vid_frames_seq.shape[0] > 1:     # if shape not (1, 4096)
-            vid_frames_seq = np.squeeze(vid_frames_seq)
-        batch_feats.append(vid_frames_seq)
+        vid_feat_seq = vidFeats[start_frame:(end_frame-15+1), :, :]
+        # dissolve the centre single-dimension, result is list of (seq_size-15) x 4096 
+        vid_feat_seq = np.squeeze(vid_feat_seq, axis=1)
+        batch_feats.append(vid_feat_seq)
         
     return batch_feats
 
@@ -285,8 +331,8 @@ def make_c3d_variables(feats, labels):
     # in the target list
     seq_size = len(labels)  
     for i in range(labels[0].size(0)):
-        lbs = [y[i] for y in labels]      # get labels of frames (size seq_size)
-        temp = [1 if sum(lbs[s:e])>=8 else 0 for s,e in enumerate(range(16, seq_size+1))]
+        lbls = [y[i] for y in labels]      # get labels of frames (size seq_size)
+        temp = [1 if sum(lbls[s:e])>=8 else 0 for s,e in enumerate(range(16, seq_size+1))]
         target.extend(temp)   # for c3d
         
 #        if labels[1][i] == 0:         # completely part of non-action
@@ -301,7 +347,37 @@ def make_c3d_variables(feats, labels):
 #                target.extend([1]*(labels[0][i] + labels[1][i] -15))
         
     # Form a wrap into a tensor variable as B X S X I
-    return create_variable(feats), create_variable(torch.Tensor(target))    
+    return create_variable(feats), create_variable(torch.Tensor(target))
+
+# Inputs: feats: list of lists
+def make_variables_new(feats, labels, motion=True):
+    # Create the input tensors and target label tensors
+    #for item in feats:
+        # item is a list with (sequence of) 9 1D vectors (each of 1152 size)
+        
+    feats = torch.Tensor(np.array(feats).astype(np.double))
+    feats[feats==float("-Inf")] = 0
+    feats[feats==float("Inf")] = 0
+    # Form the target labels 
+    target = []
+    # Append the sequence of labels of len (seq_size-1) to the target list for OF.
+    # Iterate over the batch labels, for each extract seq_size labels and extend 
+    # in the target list
+    seq_size = len(labels)  
+    if motion:      # For OF features
+        for i in range(labels[0].size(0)):
+            lbls = [y[i] for y in labels]      # get labels of frames (size seq_size)
+            temp = [1 if sum(lbls[s:e])>=1 else 0 for s,e in enumerate(range(2, seq_size+1))]
+            target.extend(temp)   
+            
+    else:       # For HOG or other frame features
+        for i in range(labels[0].size(0)):
+            lbls = [y[i] for y in labels]      # get labels of frames (size seq_size)
+            target.extend(lbls)
+
+    # Form a wrap into a tensor variable as B X S X I
+    return create_variable(feats), create_variable(torch.Tensor(target))
+
 
 # Inputs: feats: list of lists
 def make_variables(feats, labels, motion=True):
@@ -314,11 +390,6 @@ def make_variables(feats, labels, motion=True):
     feats[feats==float("Inf")] = 0
     # Form the target labels 
     target = []
-#    for i in range(labels[0].size(0)):
-#        if labels[0][i]<5:
-#            target.append(0)
-#        else:
-#            target.append(1)
     
     #target.extend([y[i] for y in labels])   # for HOG
     for i in range(labels[0].size(0)):

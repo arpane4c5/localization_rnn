@@ -39,10 +39,10 @@ THRESHOLD = 0.5
 HIDDEN_SIZE = 1000
 N_LAYERS = 1
 BATCH_SIZE = 256
-N_EPOCHS = 30
+N_EPOCHS = 100
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 29   # has to >=16 (ie. the number of frames used for c3d input)
+SEQ_SIZE = 33   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
 seq_threshold = 0.5
 

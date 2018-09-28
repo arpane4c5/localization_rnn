@@ -40,7 +40,7 @@ BATCH_SIZE = 256
 N_EPOCHS = 100
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 2
+SEQ_SIZE = 15
 threshold = 0.5
 seq_threshold = 0.5
 
@@ -71,7 +71,7 @@ if __name__=="__main__":
     # Run extract_denseOF_par.py before executing this file, using same grid_size
     # Features already extracted and dumped to disk 
     # Read those features using the given path and grid size
-    OFfeaturesPath = os.path.join(os.getcwd(),"OF_grid"+str(gridSize))
+    OFfeaturesPath = os.path.join(os.getcwd(),"OF_npy_grid"+str(gridSize))
     #HOGfeaturesPath = os.path.join(os.getcwd(),"hog_feats_new")
     
     # Uncomment the lines below to extract features for a different gridSize
@@ -94,7 +94,8 @@ if __name__=="__main__":
     #HOGfeatures = utils.readAllHOGfeatures(HOGfeaturesPath, train_lst)
     print(len(train_loader.dataset))
     
-    INP_VEC_SIZE = len(OFfeatures[OFfeatures.keys()[0]][0])   # list of vals
+    INP_VEC_SIZE = OFfeatures[OFfeatures.keys()[0]].shape[-1] 
+    #INP_VEC_SIZE = len(OFfeatures[OFfeatures.keys()[0]][0])   # list of vals
     #INP_VEC_SIZE = len(HOGfeatures[HOGfeatures.keys()[0]][0])   # list of vals
     print("INP_VEC_SIZE = ", INP_VEC_SIZE)
     
@@ -122,12 +123,12 @@ if __name__=="__main__":
             # Run your training process
             #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
             #feats = getFeatureVectors(DATASET, keys, seqs)   # Takes time. Do not use
-            batchFeats = utils.getFeatureVectorsFromDump(OFfeatures, keys, seqs, motion=True)
+            batchFeats = utils.getBatchFeatures(OFfeatures, keys, seqs, motion=True)
             #batchFeats = utils.getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
             #break
 
             # Training starts here
-            inputs, target = utils.make_variables(batchFeats, labels, motion=True)
+            inputs, target = utils.make_variables_new(batchFeats, labels, motion=True)
             #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
             output = classifier(inputs)
 
@@ -187,8 +188,8 @@ if __name__=="__main__":
     
     # Test a video or calculate the accuracy using the learned model
     print "Prediction video meta info."
-    val_labs = [os.path.join(LABELS, f) for f in test_lab]
-    val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in test_lst]
+    val_labs = [os.path.join(LABELS, f) for f in val_lab]
+    val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
     print "Size : {}".format(val_sizes)
     hlvalDataset = VideoDataset(val_labs, val_sizes, is_train_set = False)
     print hlvalDataset.__len__()
@@ -201,18 +202,18 @@ if __name__=="__main__":
     val_keys = []
     predictions = []
     print "Loading validation/test features from disk..."
-    OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, test_lst)
+    OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, val_lst)
     #HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)   
     print("Predicting on the validation/test videos...")
     for i, (keys, seqs, labels) in enumerate(val_loader):
         
         # Testing on the sample
         #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
-        batchFeats = utils.getFeatureVectorsFromDump(OFValFeatures, keys, seqs, motion=True)
+        batchFeats = utils.getBatchFeatures(OFValFeatures, keys, seqs, motion=True)
         #batchFeats = utils.getFeatureVectorsFromDump(HOGValFeatures, keys, seqs, motion=False)
         #break
         # Validation stage
-        inputs, target = utils.make_variables(batchFeats, labels, motion=True)
+        inputs, target = utils.make_variables_new(batchFeats, labels, motion=True)
         #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
         output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
 

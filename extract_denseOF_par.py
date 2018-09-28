@@ -9,9 +9,9 @@ Created on Sat June 30 01:34:25 2018
 from folder videos and dump to disk.
 
 Feature : Farneback Dense Optical Flow: Magnitudes and Angles (with grid_size)
-Execution Time: 1365.583 secs (Njobs=10, batch=10) (nVids = 26)
+Execution Time: 1365.583 secs (Njobs=10, batch=10) (nVids = 26) grid=20
 Execution Time: 1420.7 secs (Njobs=10, batch=10) (nVids=26) grid=40
-
+Execution Time: 1326.21 secs (Njobs=10, batch=10) (nVid=26) grid=30
 """
 
 import os
@@ -204,7 +204,7 @@ def getFarnebackOFVideo(srcVideoPath, grid_size):
 
 if __name__=='__main__':
     
-    gridSize = 40
+    gridSize = 30
     batch = 10  # No. of videos in a single batch
     njobs = 10   # No. of threads
     # Server params

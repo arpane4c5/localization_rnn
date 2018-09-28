@@ -6,6 +6,7 @@ Created on Sat June 30 01:34:25 2018
 @Description: Utils file to extract HOG features from folder videos and dump 
 to disk.(Parallelized Version)
 Feature : Histogram of Oriented Gradients
+Execution Time: 212.55 secs (njobs=1, batch=4) 64x64 centre crops 
 """
 
 import os
