@@ -5,8 +5,10 @@ Created on Sat June 30 01:34:25 2018
 @author: Arpan
 @Description: Utils file to extract HOG features from folder videos and dump 
 to disk.(Parallelized Version)
-Feature : Histogram of Oriented Gradients
+Feature : Histogram of Oriented Gradients on 64x64 centre crops. HOG winSize=64,
+Blocksize=32, BlockStride=8, cellsize=8, nbins=9 (in hog.xml). (Vec Size=3600)
 Execution Time: 212.55 secs (njobs=1, batch=4) 64x64 centre crops 
+                117.88 secs (njobs=2, batch=4)   "
 """
 
 import os
@@ -26,8 +28,8 @@ def extract_hog_vids(srcFolderPath, destFolderPath, hog, njobs=1, batch=10, stop
         complete path to folder which contains the videos
     destFolderPath: str
         path to store the optical flow values in .npy files
-    hog: cv2.HOGDescriptor
-        Object reference to the HOGDescriptor to be used for HOG extraction.
+    hog: str
+        path to .xml file describing the HOG parameters to be used.
     njobs: int
         no. of cores to be used parallely
     batch: int
@@ -129,7 +131,7 @@ def getTotalFramesVid(srcVideoPath):
     cap.release()
     return tot_frames
 
-def getHOGVideo(srcVideoPath, hog):
+def getHOGVideo(srcVideoPath, hogPath):
     """
     Function to get the HOG features for all the frames of a video file. 
     The HOG parameters are defined in the hog.xml file. WinSize=64, BlockSize=32,
@@ -140,8 +142,8 @@ def getHOGVideo(srcVideoPath, hog):
     ------
     srcVideoPath: str
         complete path to a single video file.
-    hog: cv2.HOGDescriptor
-        Object reference for the HOG parameters.
+    hog: str
+        path to the HOG parameters file.
         
     Returns: 
     ------
@@ -175,7 +177,8 @@ def getHOGVideo(srcVideoPath, hog):
         # Take the centre crop of the frames (64 x 64)
         curr_frame = curr_frame[(w/2-32):(w/2+32), (h/2-32):(h/2+32)]
         # compute the HOG feature vector 
-        hog_feature = hog.compute(curr_frame)   # vector
+        hog = cv2.HOGDescriptor(hogPath)        # get cv2.HOGDescriptor object
+        hog_feature = hog.compute(curr_frame)   # get 3600 x 1 matrix (not vec)
         # saving as a list of float matrices (dim 1 x vec_size)
         hog_feature = np.expand_dims(hog_feature.flatten(), axis = 0)
         features_current_file.append(hog_feature)
@@ -189,20 +192,21 @@ def getHOGVideo(srcVideoPath, hog):
 if __name__ == '__main__':
     # For > 1 jobs, Pickling error due to call to Parallel and cannot serialize
     batch = 4  # No. of videos in a single batch
-    njobs = 1   # No. of threads
+    njobs = 2   # No. of threads
     
     # Server params
     srcPath = '/opt/datasets/cricket/ICC_WT20'
-    destPath = "/home/arpan/VisionWorkspace/localization_rnn/hog_feats_new"
+    destPath = "/home/arpan/VisionWorkspace/localization_rnn/hog_feats_64x64"
     
     if not os.path.exists(srcPath):
         srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-        destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/hog_feats_new"
+        destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/hog_feats_64x64"
     
     hog_params_file = "hog.xml"     # in current dir
-    hog = cv2.HOGDescriptor(hog_params_file)
+    #hog = cv2.HOGDescriptor(hog_params_file)   # cannot send cv2.HOGDescriptor
+    # results in PicklingError when called for >1 njobs.
     start = time.time()
-    extract_hog_vids(srcPath, destPath, hog, njobs, batch, stop='all')
+    extract_hog_vids(srcPath, destPath, hog_params_file, njobs, batch, stop='all')
     end = time.time()
     print "Total execution time : "+str(end-start)
     
