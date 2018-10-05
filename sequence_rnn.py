@@ -40,7 +40,7 @@ BATCH_SIZE = 256
 N_EPOCHS = 100
 INP_VEC_SIZE = 1152      # taking grid_size = 20 get this feature vector size 
 #INP_VEC_SIZE = 576     # only magnitude features
-SEQ_SIZE = 15
+SEQ_SIZE = 5
 threshold = 0.5
 seq_threshold = 0.5
 
@@ -53,7 +53,7 @@ if __name__=="__main__":
     # specifiy for grayscale or BGR values
     color = ('g')
     bins = 256      # No of bins in the historgam
-    gridSize = 20
+    gridSize = 30
     
     train_lab = [f+".json" for f in train_lst]
     val_lab = [f+".json" for f in val_lst]
@@ -71,8 +71,10 @@ if __name__=="__main__":
     # Run extract_denseOF_par.py before executing this file, using same grid_size
     # Features already extracted and dumped to disk 
     # Read those features using the given path and grid size
-    OFfeaturesPath = os.path.join(os.getcwd(),"OF_npy_grid"+str(gridSize))
+    #OFfeaturesPath = os.path.join(os.getcwd(),"OF_npy_grid"+str(gridSize))
     #HOGfeaturesPath = os.path.join(os.getcwd(),"hog_feats_new")
+    # change the name to "OF_npy_grid"+str(gridSize) or "c3d_feats_"+str(depth)
+    featuresPath = os.path.join(os.getcwd(), "hog_feats_64x64")
     
     # Uncomment the lines below to extract features for a different gridSize
 #    from extract_denseOF_par import extract_dense_OF_vids
@@ -90,24 +92,25 @@ if __name__=="__main__":
     train_losses = []
     # read into dictionary {vidname: np array, ...}
     print("Loading features from disk...")
-    OFfeatures = utils.readAllOFfeatures(OFfeaturesPath, train_lst)
+    #OFfeatures = utils.readAllOFfeatures(OFfeaturesPath, train_lst)
     #HOGfeatures = utils.readAllHOGfeatures(HOGfeaturesPath, train_lst)
+    features = utils.readAllPartitionFeatures(featuresPath, train_lst)
     print(len(train_loader.dataset))
     
-    INP_VEC_SIZE = OFfeatures[OFfeatures.keys()[0]].shape[-1] 
+    INP_VEC_SIZE = features[features.keys()[0]].shape[-1] 
     #INP_VEC_SIZE = len(OFfeatures[OFfeatures.keys()[0]][0])   # list of vals
     #INP_VEC_SIZE = len(HOGfeatures[HOGfeatures.keys()[0]][0])   # list of vals
     print("INP_VEC_SIZE = ", INP_VEC_SIZE)
     
     # Creating the RNN and training
     classifier = RNNClassifier(INP_VEC_SIZE, HIDDEN_SIZE, 1, N_LAYERS)
-    if torch.cuda.device_count() > 1:
-        print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
-        classifier = nn.DataParallel(classifier)
-
-    if torch.cuda.is_available():
-        classifier.cuda()
+#    if torch.cuda.device_count() > 1:
+#        print("Let's use", torch.cuda.device_count(), "GPUs!")
+#        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
+#        classifier = nn.DataParallel(classifier)
+#
+#    if torch.cuda.is_available():
+#        classifier.cuda()
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     #criterion = nn.CrossEntropyLoss()
@@ -123,12 +126,12 @@ if __name__=="__main__":
             # Run your training process
             #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
             #feats = getFeatureVectors(DATASET, keys, seqs)   # Takes time. Do not use
-            batchFeats = utils.getBatchFeatures(OFfeatures, keys, seqs, motion=True)
+            batchFeats = utils.getBatchFeatures(features, keys, seqs, motion=False)
             #batchFeats = utils.getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
             #break
 
             # Training starts here
-            inputs, target = utils.make_variables_new(batchFeats, labels, motion=True)
+            inputs, target = utils.make_variables_new(batchFeats, labels, motion=False)
             #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
             output = classifier(inputs)
 
@@ -202,18 +205,19 @@ if __name__=="__main__":
     val_keys = []
     predictions = []
     print "Loading validation/test features from disk..."
-    OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, val_lst)
+    #OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, val_lst)
     #HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)   
+    ValFeatures = utils.readAllPartitionFeatures(featuresPath, val_lst)
     print("Predicting on the validation/test videos...")
     for i, (keys, seqs, labels) in enumerate(val_loader):
         
         # Testing on the sample
         #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
-        batchFeats = utils.getBatchFeatures(OFValFeatures, keys, seqs, motion=True)
+        batchFeats = utils.getBatchFeatures(ValFeatures, keys, seqs, motion=False)
         #batchFeats = utils.getFeatureVectorsFromDump(HOGValFeatures, keys, seqs, motion=False)
         #break
         # Validation stage
-        inputs, target = utils.make_variables_new(batchFeats, labels, motion=True)
+        inputs, target = utils.make_variables_new(batchFeats, labels, motion=False)
         #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
         output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
 
@@ -273,3 +277,5 @@ if __name__=="__main__":
         json.dump(filtered_shots, fp)
     print("Prediction file written to disk !!")
     #####################################################################
+
+    print "#Parameters : {} ".format(utils.count_parameters(classifier))
