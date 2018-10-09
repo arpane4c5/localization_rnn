@@ -20,10 +20,10 @@ from skimage.transform import resize
 
 def create_variable(tensor):
     # Do cuda() before wrapping with variable
-#    if torch.cuda.is_available():
-#        return Variable(tensor.cuda())
-#    else:
-    return Variable(tensor)
+    if torch.cuda.is_available():
+        return Variable(tensor.cuda())
+    else:
+        return Variable(tensor)
 
 # Split the dataset files into training, validation and test sets
 # All video files present at the same path (assumed)
@@ -146,9 +146,11 @@ def readAllPartitionFeatures(featuresPath, keys):
     ------
     feats: dict
         a dictionary of key: numpy matrix of size (N-1 x 1 x (2x(H/grid)x(W/grid))) 
-        for OF, size (N x 1 x 3600) for HOG, size (N-16+1 x 1 x 4096) for C3D,
+        for OF, size (N x 1 x 3600) for HOG, size (N-depth+1 x 1 x 4096) for C3D,
         where N is the total number of frames in video, H=360, W=640 and grid is the
-        sampling distance between two consecutive pixels (refer extract_denseOF_par.py)
+        sampling distance between two consecutive pixels (refer extract_denseOF_par.py).
+        depth is the number of frames sent to c3d pretrained model for 
+        feature extraction (extract_c3d_feats.py).
     """
     feats = {}
     for k in keys:
@@ -159,85 +161,7 @@ def readAllPartitionFeatures(featuresPath, keys):
             
     print "Features loaded into dictionary ..."
     return feats
-    
 
-#def readAllOFfeatures(OFfeaturesPath, keys):
-#    """
-#    Load the OF features of the train/val/test set into a dictionary. Dictionary 
-#    has key as the filename(without ext) of video and value as the numpy feature 
-#    matrix.
-#    
-#    Parameters:
-#    ------
-#    OFfeaturesPath: str
-#        path till the binary files of OF features
-#    keys: list of strings
-#        list of filenames (without ext), which will be keys in the dictionary
-#        and the corresponding files are the OF numpy dumps.
-#    
-#    Returns:
-#    ------
-#    feats: dict
-#        a dictionary of key: numpy matrix of size (N-1 x 1 x (2x(H/grid)x(W/grid))) 
-#        where N is the total number of frames in video, H=360, W=640 and grid is the
-#        sampling distance between two consecutive pixels (refer extract_denseOF_par.py)
-#    """
-#    feats = {}
-#    for k in keys:
-#        featpath = os.path.join(OFfeaturesPath, k)+".npy"
-#        assert os.path.exists(featpath), "featpath not found {}".format(featpath)
-#        with open(featpath, "rb") as fobj:
-#            feats[k] = np.load(fobj)
-#            
-#    print "Features loaded into dictionary ..."
-#    return feats
-
-#def readAllHOGfeatures(HOGfeaturesPath, keys):
-#    """
-#    Load the features of the train/val/test set into a dictionary. Dictionary 
-#    has key as the filename(without ext) of video and value as the numpy feature 
-#    matrix.
-#    """
-#    feats = {}
-#    for k in keys:
-#        featpath = os.path.join(HOGfeaturesPath, k)+".npy"
-#        assert os.path.exists(featpath), "featpath not found {}".format(featpath)
-#        with open(featpath, "rb") as fobj:
-#            feats[k] = pickle.load(fobj)
-#            
-#    print "Features loaded into dictionary ..."
-#    return feats
-        
-#def readAllC3DFeatures(c3dFeaturesPath, keys):
-#    """
-#    Load the c3d features of the train/val/test set into a dictionary. Dictionary 
-#    has key as the filename(without ext) of video and value as the numpy feature 
-#    matrix.
-#    
-#    Parameters:
-#    ------
-#    c3dFeaturesPath: str
-#        path till the binary files of c3d features
-#    keys: list of strings
-#        list of filenames (without ext), which will be keys in the dictionary
-#        and the corresponding files are the c3d numpy dumps.
-#    
-#    Returns:
-#    ------
-#    feats: dict
-#        a dictionary of key: numpy matrix of size (N-16+1 x 1 x 4096) 
-#        where N is the total number of frames in video, 16 is the number of frames
-#        sent to c3d pretrained model for feature extraction (extract_c3d_feats.py)
-#    """
-#    feats = {}
-#    for k in keys:
-#        featpath = os.path.join(c3dFeaturesPath, k)+".npy"
-#        assert os.path.exists(featpath), "featpath not found {}".format(featpath)
-#        with open(featpath, "rb") as fobj:
-#            feats[k] = np.load(fobj)
-#            
-#    print "Features loaded into dictionary ..."
-#    return feats
 
 def readAllNumpyFrames(numpyFramesPath, keys):
     """

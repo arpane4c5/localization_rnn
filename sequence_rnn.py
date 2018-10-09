@@ -71,10 +71,10 @@ if __name__=="__main__":
     # Run extract_denseOF_par.py before executing this file, using same grid_size
     # Features already extracted and dumped to disk 
     # Read those features using the given path and grid size
-    #OFfeaturesPath = os.path.join(os.getcwd(),"OF_npy_grid"+str(gridSize))
+    featuresPath = os.path.join(os.getcwd(),"OF_npy_grid"+str(gridSize))
     #HOGfeaturesPath = os.path.join(os.getcwd(),"hog_feats_new")
     # change the name to "OF_npy_grid"+str(gridSize) or "c3d_feats_"+str(depth)
-    featuresPath = os.path.join(os.getcwd(), "hog_feats_64x64")
+    #featuresPath = os.path.join(os.getcwd(), "hog_feats_64x64")
     
     # Uncomment the lines below to extract features for a different gridSize
 #    from extract_denseOF_par import extract_dense_OF_vids
@@ -104,13 +104,13 @@ if __name__=="__main__":
     
     # Creating the RNN and training
     classifier = RNNClassifier(INP_VEC_SIZE, HIDDEN_SIZE, 1, N_LAYERS)
-#    if torch.cuda.device_count() > 1:
-#        print("Let's use", torch.cuda.device_count(), "GPUs!")
-#        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
-#        classifier = nn.DataParallel(classifier)
-#
-#    if torch.cuda.is_available():
-#        classifier.cuda()
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        # dim = 0 [33, xxx] -> [11, ...], [11, ...], [11, ...] on 3 GPUs
+        classifier = nn.DataParallel(classifier)
+
+    if torch.cuda.is_available():
+        classifier.cuda()
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     #criterion = nn.CrossEntropyLoss()
@@ -126,12 +126,12 @@ if __name__=="__main__":
             # Run your training process
             #print(epoch, i) #, "keys", keys, "Sequences", seqs, "Labels", labels)
             #feats = getFeatureVectors(DATASET, keys, seqs)   # Takes time. Do not use
-            batchFeats = utils.getBatchFeatures(features, keys, seqs, motion=False)
+            batchFeats = utils.getBatchFeatures(features, keys, seqs, motion=True)
             #batchFeats = utils.getFeatureVectorsFromDump(HOGfeatures, keys, seqs, motion=False)
             #break
 
             # Training starts here
-            inputs, target = utils.make_variables_new(batchFeats, labels, motion=False)
+            inputs, target = utils.make_variables_new(batchFeats, labels, motion=True)
             #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
             output = classifier(inputs)
 
@@ -191,8 +191,8 @@ if __name__=="__main__":
     
     # Test a video or calculate the accuracy using the learned model
     print "Prediction video meta info."
-    val_labs = [os.path.join(LABELS, f) for f in val_lab]
-    val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
+    val_labs = [os.path.join(LABELS, f) for f in test_lab]
+    val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in test_lst]
     print "Size : {}".format(val_sizes)
     hlvalDataset = VideoDataset(val_labs, val_sizes, is_train_set = False)
     print hlvalDataset.__len__()
@@ -207,17 +207,17 @@ if __name__=="__main__":
     print "Loading validation/test features from disk..."
     #OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, val_lst)
     #HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)   
-    ValFeatures = utils.readAllPartitionFeatures(featuresPath, val_lst)
+    valFeatures = utils.readAllPartitionFeatures(featuresPath, test_lst)
     print("Predicting on the validation/test videos...")
     for i, (keys, seqs, labels) in enumerate(val_loader):
         
         # Testing on the sample
         #feats = getFeatureVectors(DATASET, keys, seqs)      # Parallelize this
-        batchFeats = utils.getBatchFeatures(ValFeatures, keys, seqs, motion=False)
+        batchFeats = utils.getBatchFeatures(valFeatures, keys, seqs, motion=True)
         #batchFeats = utils.getFeatureVectorsFromDump(HOGValFeatures, keys, seqs, motion=False)
         #break
         # Validation stage
-        inputs, target = utils.make_variables_new(batchFeats, labels, motion=False)
+        inputs, target = utils.make_variables_new(batchFeats, labels, motion=True)
         #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
         output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
 
