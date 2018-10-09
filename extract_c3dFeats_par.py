@@ -15,9 +15,10 @@ import cv2
 import time
 import pandas as pd
 import torch.nn as nn
+import model_c3d as c3d
 from torch.autograd import Variable
 from joblib import Parallel, delayed
-    
+
 
 def extract_c3d_all(model, srcFolderPath, destFolderPath, onGPU=True, depth=16, stop='all'):
     """
@@ -78,8 +79,8 @@ def extract_c3d_all(model, srcFolderPath, destFolderPath, onGPU=True, depth=16, 
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 5  # No. of videos in a single batch
-    njobs = 5   # No. of threads
+    batch = 10  # No. of videos in a single batch
+    njobs = 10   # No. of threads
     
     ###########################################################################
     if onGPU:
@@ -198,7 +199,7 @@ def getFrames(srcVideoPath):
     return np.array(features_current_file)      # convert to N x w x h
 
 
-def getC3DFrameFeats(model, srcVideoPath, onGPU, depth):
+def getC3DFrameFeats(m, srcVideoPath, onGPU, depth):
     """
     Function to read all the frames of the video and get sequence of features
     by passing 'depth' frames to C3D model, one batch at a time. 
@@ -219,6 +220,11 @@ def getC3DFrameFeats(model, srcVideoPath, onGPU, depth):
     ------
     np.array of size (N-depth+1) x 4096 (N is the no. of frames in video.)
     """
+    model = c3d.C3D()
+    model.load_state_dict(torch.load(m))
+    if onGPU:
+        model.cuda()
+    model.eval()
     # get the VideoCapture object
     cap = cv2.VideoCapture(srcVideoPath)
     
@@ -292,6 +298,7 @@ def getC3DFrameFeats(model, srcVideoPath, onGPU, depth):
 
     # When everything done, release the capture
     cap.release()
+    del model
     #return features_current_file
     return np.array(features_current_file)      # convert to (N-depth+1) x 1 x 4096
 
@@ -301,18 +308,18 @@ if __name__=='__main__':
     # False if we want a parallel extraction on the CPU cores.
     
     # create a model 
-    import model_c3d as c3d
+    model = 'c3d.pickle'
     
-    model = c3d.C3D()
+    #model = c3d.C3D()
     
     ###########################################################################
     
     # get network pretrained model
-    model.load_state_dict(torch.load('c3d.pickle'))
-    if onGPU:
-        model.cuda()
+    #model.load_state_dict(torch.load('c3d.pickle'))
+    #if onGPU:
+    #    model.cuda()
         
-    model.eval()
+    #model.eval()
 
     # The srcPath should have subfolders that contain the training, val, test videos.
     #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
@@ -340,3 +347,6 @@ if __name__=='__main__':
     #
     # Parallel Implementation: 5 cores 5 batch size
     # Execution time (26 vids) : 43924.76 sec
+    # Parallel Implementation: 10 cores and 10 batch size (load model per core)
+    # Execution time (26 vids) : 28545.68 secs
+    #
