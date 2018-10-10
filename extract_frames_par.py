@@ -4,8 +4,11 @@
 Created on Sat Sept 8 01:34:25 2018
 @author: Arpan
 @Description: Utils file to extract frame from folder videos and dump to disk.
-Feature : Frames converted to numpy files, easy to subset consecutive frames 
-and feed them to the deep network.
+Feature : Frames converted to numpy files(after resizing to half H and W and 
+taking the centre crops 112 x 112 x 3), for passing them to the c3d model for 
+training or finetuning. Easy to subset consecutive frames and feed them to the 
+deep network.
+Total Execution Time for 26 vids : 57.25 secs (njobs=10, batch=10)
 """
 
 import os
@@ -16,7 +19,7 @@ import pandas as pd
 from joblib import Parallel, delayed
     
 
-def extract_vid_frames(srcFolderPath, destFolderPath, stop='all'):
+def extract_vid_frames(srcFolderPath, destFolderPath, njobs=1, batch=10, stop='all'):
     """
     Function to extract the features from a list of videos
     
@@ -26,8 +29,11 @@ def extract_vid_frames(srcFolderPath, destFolderPath, stop='all'):
         path to folder which contains the videos
     destFolderPath: str
         path to store the optical flow values in .bin files
-    grid_size: int
-        distance between two neighbouring pixel optical flow values.
+    njobs: int
+        no. of cores to be used parallely
+    batch: int
+        no. of video files in a batch. A batch executed parallely and 
+        is dumped to disk before starting another batch. Depends on RAM.
     stop: str
         to traversel 'stop' no of files in each subdirectory.
     
@@ -70,8 +76,6 @@ def extract_vid_frames(srcFolderPath, destFolderPath, stop='all'):
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 10  # No. of videos in a single batch
-    njobs = 5   # No. of threads
     
     for i in range(nrows/batch):
         #batch_diffs = getHOGVideo(filenames_df['infiles'][i], hog)
@@ -147,14 +151,13 @@ def getFrames(srcVideoPath):
         print("Error reading the video file !!")
         return None
     
-    w, h = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    W, H = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
     #totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     frameCount = 0
     features_current_file = []
     
     #ret, prev_frame = cap.read()
     assert cap.isOpened(), "Capture object does not return a frame!"
-    #prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
     
     # Iterate over the entire video to get the optical flow features.
     while(cap.isOpened()):
@@ -162,13 +165,14 @@ def getFrames(srcVideoPath):
         ret, curr_frame = cap.read()
         if not ret:
             break
-        curr_frame = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
-        # taking centre crop of 112 x 112
-        curr_frame = curr_frame[(w/2-56):(w/2+56), (h/2-56):(h/2+56)]
-        #flow = cv2.calcOpticalFlowFarneback(prev_frame,curr_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-        #hog_feature = hog.compute(curr_frame)   # vector
+        
+        # resize to 180 x 320 
+        curr_frame = cv2.resize(curr_frame, (W/2, H/2), cv2.INTER_AREA)
+        (h, w) = curr_frame.shape[:2]
+        # take the centre crop size is 112 x 112 x 3
+        curr_frame = curr_frame[(h/2-56):(h/2+56), (w/2-56):(w/2+56), :]
+        
         # saving as a list of float values (after converting into 1D array)
-        #features_current_file.append(hog_feature.ravel().tolist())
         features_current_file.append(curr_frame)
 
     # When everything done, release the capture
@@ -179,16 +183,18 @@ def getFrames(srcVideoPath):
 
 
 if __name__=='__main__':
-    # The srcPath should have subfolders that contain the training, val, test videos.
+    batch = 10  # No. of videos in a single batch
+    njobs = 10   # No. of threads
 
     #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
     srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/numpy_frames_cropped"
+    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/numpy_vids_112x112"
     if not os.path.exists(srcPath):
         srcPath = "/opt/datasets/cricket/ICC_WT20"
-        destPath = "/home/arpan/VisionWorkspace/localization_rnn/numpy_frames_cropped"
+        destPath = "/home/arpan/VisionWorkspace/localization_rnn/numpy_vids_112x112"
     
     start = time.time()
-    extract_vid_frames(srcPath, destPath, stop='all')
+    nfiles = extract_vid_frames(srcPath, destPath, njobs, batch, stop='all')
     end = time.time()
-    print "Total execution time : "+str(end-start)
+    print "Total execution time for {} files : {}".format(nfiles, str(end-start))
+    
