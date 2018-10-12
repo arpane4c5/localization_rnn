@@ -20,10 +20,10 @@ from skimage.transform import resize
 
 def create_variable(tensor):
     # Do cuda() before wrapping with variable
-    if torch.cuda.is_available():
-        return Variable(tensor.cuda())
-    else:
-        return Variable(tensor)
+#    if torch.cuda.is_available():
+#        return Variable(tensor.cuda())
+#    else:
+    return Variable(tensor)
 
 # Split the dataset files into training, validation and test sets
 # All video files present at the same path (assumed)
