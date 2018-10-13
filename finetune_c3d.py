@@ -40,7 +40,7 @@ THRESHOLD = 0.5
 # Parameters and DataLoaders
 HIDDEN_SIZE = 1000
 N_LAYERS = 1
-BATCH_SIZE = 32
+BATCH_SIZE = 16     # for 32 out of memory, for 16 it runs
 N_EPOCHS = 2
 INP_VEC_SIZE = None
 SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
@@ -166,14 +166,15 @@ def make_variables(feats, labels):
     
     for i in range(labels[0].size(0)):
         lbls = [y[i] for y in labels]      # get labels of frames (size seq_size)
+        # for getting batch x 2 sized matrix, add vectors of size 2
         if sum(lbls)>=8:
-            target.extend(1)
+            target.append(1)   # action is True
         else:
-            target.extend(0)
+            target.append(0)
 
     # Form a wrap into a tensor variable as B X S X I
     # target is a vector of batchsize
-    return utils.create_variable(feats), utils.create_variable(torch.Tensor(target))
+    return utils.create_variable(feats), utils.create_variable(torch.LongTensor(target))
 
 if __name__=='__main__':
 
@@ -264,11 +265,15 @@ if __name__=='__main__':
     # reset the last layer
     model.fc8 = nn.Linear(4096, 2)
     # Load on the GPU, if available
-#    if torch.cuda.device_count() > 1:
-#        print("Let's use", torch.cuda.device_count(), "GPUs!")
-#        # Parallely run on multiple GPUs using DataParallel
-#        model = nn.DataParallel(model)
-#
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        # Parallely run on multiple GPUs using DataParallel
+        model.fc8 = nn.DataParallel(model.fc8)
+        model.cuda()
+        
+    elif torch.cuda.device_count() == 1:
+        model.cuda()
+
 #    if torch.cuda.is_available():
 #        model.cuda()    
     
@@ -315,24 +320,29 @@ if __name__=='__main__':
             output = model(inputs)
 
             #loss = criterion(sigm(output.view(output.size(0))), target)
-            loss = criterion(output.view(output.size(1)), target)
+            loss = criterion(output, target)
             total_loss += loss.data[0]
+            #total_loss += loss.item()
 
             model.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if i % 2 == 0:
-                print('Train Epoch: {} :: Loss: {:.2f}'.format(epoch, total_loss))
+#            if i % 2 == 0:
+#                print('Train Epoch: {} :: Loss: {:.2f}'.format(epoch, total_loss))
             #if (i+1) % 10 == 0:
             #    break
         train_losses.append(total_loss)
         print('Train Epoch: {} :: Loss: {:.2f}'.format(epoch+1, total_loss))
     
+    end = time.time()
+    print "Total Execution time for {} epoch : {}".format(N_EPOCHS, (end-start))
     
+    print "#Parameters : {} ".format(utils.count_parameters(model))
 #    # Save only the model params
-#    torch.save(classifier.state_dict(), "gru_100_epoch10_BCE.pt")
-#    print "Model saved to disk..."
+    mod_name = "c3d_finetune_ep"+str(N_EPOCHS)+"_w16_SGD.pt"
+    torch.save(model.state_dict(), mod_name)
+    print "Model saved to disk... {}".format(mod_name)
 #    
 #    # Save losses to a txt file
 #    with open("losses.pkl", "w") as fp:
