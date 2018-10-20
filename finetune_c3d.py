@@ -37,7 +37,7 @@ if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
 
 # Parameters and DataLoaders
 BATCH_SIZE = 16     # for 32 out of memory, for 16 it runs
-N_EPOCHS = 3
+N_EPOCHS = 30
 INP_VEC_SIZE = None
 SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
@@ -93,9 +93,9 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
                     model.zero_grad()
                     loss.backward()
                     optimizer.step()
-                if (i+1) == 100:
-                    print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
-                          .format(phase, (i+1), net_loss, accuracy))
+#                if (i+1) == 100:
+#                    print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
+#                          .format(phase, (i+1), net_loss, accuracy))
                     #break
             accuracy = fabs(accuracy)/len(datasets_loader[phase])
             training_stats[epoch][phase]['loss'] = net_loss
