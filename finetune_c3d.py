@@ -24,6 +24,7 @@ from math import fabs
 from Video_Dataset import VideoDataset
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import StepLR
 from collections import defaultdict
 
 # Local Paths
@@ -48,9 +49,11 @@ wts_path = 'c3d.pickle'
 
 # takes a model to train along with dataset, optimizer and criterion
 def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
-          criterion, nEpochs, use_gpu):
+          scheduler, criterion, nEpochs, use_gpu):
     global training_stats
     training_stats = defaultdict()
+#    best_model_wts = copy.deepcopy(model.state_dict())
+#    best_acc = 0.0
     
     for epoch in range(nEpochs):
         print "-"*60
@@ -64,6 +67,7 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
             accuracy = 0
             net_loss = 0
             if phase == 'train':
+                scheduler.step()
                 model.train(True)
             elif phase == 'test':
                 #print("validation")
@@ -86,33 +90,40 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
                 #print(preds, y)
                 net_loss += loss.data.cpu().numpy()
                 accuracy += get_accuracy(preds, y)
+#                print "# Accurate : {}".format(accuracy)
                 
 #                print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
-#                      .format(phase, (i+1), net_loss, accuracy))
+#                          .format(phase, (i+1), net_loss, accuracy))
                 if phase == 'train':
-                    model.zero_grad()
+                    optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-#                if (i+1) == 100:
+#                if (i+1) == 10:
 #                    print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
 #                          .format(phase, (i+1), net_loss, accuracy))
-                    #break
+#                    break
             accuracy = fabs(accuracy)/len(datasets_loader[phase])
+#            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
             training_stats[epoch][phase]['loss'] = net_loss
-            training_stats[epoch][phase]['acc'] = accuracy        
+            training_stats[epoch][phase]['acc'] = accuracy
+            training_stats[epoch][phase]['lr'] = optimizer.param_groups[0]['lr']
             
         # Display at end of epoch
-        print("Phase : Train :: Epoch : {} :: Loss : {} :: Accuracy : {}"\
+        print("Phase : Train :: Epoch : {} :: Loss : {} :: Accuracy : {} : LR : {}"\
               .format((epoch+1), training_stats[epoch]['train']['loss'],\
-                      training_stats[epoch]['train']['acc']))
+                      training_stats[epoch]['train']['acc'], \
+                                    optimizer.param_groups[0]['lr']))
         print("Phase : Test :: Epoch : {} :: Loss : {} :: Accuracy : {}"\
               .format((epoch+1), training_stats[epoch]['test']['loss'],\
                       training_stats[epoch]['test']['acc']))
+
 #        s7, s8 = 0, 0
 #        for p in model.fc7.parameters():
 #            s7 += torch.sum(p)
+#            #print p[...,-3:]
 #        for p in model.fc8.parameters():
 #            s8 += torch.sum(p)
+#            #print p[...,-3:]
 #        print("FC7 Sum : {} :: FC8 Sum : {}".format(s7, s8))
 
     # Save dictionary after all the epochs
@@ -315,14 +326,16 @@ if __name__=='__main__':
     #criterion = nn.BCELoss()
     
     #optimizer = torch.optim.SGD(model.fc8.parameters(), lr=0.001, momentum=0.9)
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), \
-                                 lr = 0.001)
+#    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), \
+#                                 lr = 0.01)
+    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), \
+                                 lr = 0.001, momentum=0.9)
     
     sigm = nn.Sigmoid()
     
     # set the scheduler, optimizer and retrain (eg. SGD)
     # Decay LR by a factor of 0.1 every 7 epochs
-    #exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    step_lr_scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     
     #####################################################################
     
@@ -331,13 +344,13 @@ if __name__=='__main__':
     
     # Training (finetuning) and validating
     model = train(trainFrames, valFrames, model, datasets_loader, optimizer, \
-                     criterion, nEpochs=N_EPOCHS, use_gpu=use_gpu)    #exp_lr_scheduler,
+                     step_lr_scheduler, criterion, nEpochs=N_EPOCHS, use_gpu=use_gpu)
         
     end = time.time()
     print "Total Execution time for {} epoch : {}".format(N_EPOCHS, (end-start))
     
     # Save only the model params
-    mod_name = "c3d_finetune_FC78_ep"+str(N_EPOCHS)+"_w16_Adam.pt"
+    mod_name = "c3d_finetune_FC78_ep"+str(N_EPOCHS)+"_w16_SGD.pt"
     torch.save(model.state_dict(), mod_name)
     print "Model saved to disk... {}".format(mod_name)
     
@@ -365,7 +378,7 @@ if __name__=='__main__':
         predictions.append(pred_probs)  # append the 
         #if i % 2 == 0:
         #    print('i: {} :: Val keys: {} : seqs : {}'.format(i, keys, seqs)) #keys, pred_probs))
-#        if (i+1) % 10 == 0:
+#        if (i+1) % 100 == 0:
 #            break
     print "Predictions done on validation/test set..."
     #####################################################################
