@@ -38,13 +38,15 @@ if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
 
 # Parameters and DataLoaders
 BATCH_SIZE = 16     # for 32 out of memory, for 16 it runs
-N_EPOCHS = 30
+N_EPOCHS = 60
 INP_VEC_SIZE = None
 SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
 seq_threshold = 0.5
 data_dir = "numpy_vids_112x112"
 wts_path = 'c3d.pickle'
+#chkpoint = 'c3d_finetune_FC78_ep5_w16_SGD.pt'
+mod_name = "log/c3d_finetune_FC8_ep"
 
 
 # takes a model to train along with dataset, optimizer and criterion
@@ -60,7 +62,7 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
         print "Epoch -> {} ".format((epoch+1))
         training_stats[epoch] = {}
         # for each epoch train the model and then evaluate it
-        for phase in ['train', 'test']:
+        for phase in ['train']:
             #print("phase->", phase)
             dataset = datasets_loader[phase]
             training_stats[epoch][phase] = {}
@@ -72,7 +74,7 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
             elif phase == 'test':
                 #print("validation")
                 model.train(False)
-                        
+            
             for i, (keys, seqs, labels) in enumerate(dataset):
                 
                 # return a 16 x ch x depth x H x W 
@@ -98,24 +100,25 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-#                if (i+1) == 10:
-#                    print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
-#                          .format(phase, (i+1), net_loss, accuracy))
-#                    break
-            accuracy = fabs(accuracy)/len(datasets_loader[phase])
-#            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
+                if (i+1) == 2000:
+                    break
+#            accuracy = fabs(accuracy)/len(datasets_loader[phase])
+            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
             training_stats[epoch][phase]['loss'] = net_loss
             training_stats[epoch][phase]['acc'] = accuracy
             training_stats[epoch][phase]['lr'] = optimizer.param_groups[0]['lr']
             
         # Display at end of epoch
-        print("Phase : Train :: Epoch : {} :: Loss : {} :: Accuracy : {} : LR : {}"\
-              .format((epoch+1), training_stats[epoch]['train']['loss'],\
+        print("Phase {} : Train :: Epoch : {} :: Loss : {} :: Accuracy : {} : LR : {}"\
+              .format(i, (epoch+1), training_stats[epoch]['train']['loss'],\
                       training_stats[epoch]['train']['acc'], \
                                     optimizer.param_groups[0]['lr']))
-        print("Phase : Test :: Epoch : {} :: Loss : {} :: Accuracy : {}"\
-              .format((epoch+1), training_stats[epoch]['test']['loss'],\
-                      training_stats[epoch]['test']['acc']))
+#        print("Phase : Test :: Epoch : {} :: Loss : {} :: Accuracy : {}"\
+#              .format((epoch+1), training_stats[epoch]['test']['loss'],\
+#                      training_stats[epoch]['test']['acc']))
+        
+        if ((epoch+1)%10) == 0:
+            save_model_checkpoint(model, epoch+1, "SGD", win=SEQ_SIZE)
 
 #        s7, s8 = 0, 0
 #        for p in model.fc7.parameters():
@@ -129,18 +132,13 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
     # Save dictionary after all the epochs
     save_stats_dict(training_stats)
     # Training finished
-        
-#    print("Loss and Accuracy")
-#    for ep in range(nEpochs):
-#        print("Epoch : {}".format(ep))
-#        for phase in ['train', 'test']:
-#            # training_stats.append([acc_dict[phase]/len(datasets_loader[phase]), loss_dict[phase]])
-#            print("{} Accuracy -> {}".format(phase, training_stats[ep][phase]['acc']))
-#            print("{} Loss -> {}".format(phase, training_stats[ep][phase]['loss']))
-#        print("weights")
-#        _, weights_layer1 = model.named_parameters().next()
-#        print(weights_layer1[1,1,1])
     return model
+
+def save_model_checkpoint(model, ep, loss, win=16):
+    # Save only the model params
+    name = mod_name+str(ep)+"_w"+str(win)+"_"+loss+".pt"
+    torch.save(model.state_dict(), name)
+    print "Model saved to disk... {}".format(name)
 
 def get_1D_preds(preds):
     preds_new = []
@@ -307,14 +305,14 @@ if __name__=='__main__':
         param.requires_grad = False
     # reset the last layer (default requires_grad is True)
     model.fc8 = nn.Linear(4096, 2)
-    model.fc7 = nn.Linear(4096, 4096)
+    #model.fc7 = nn.Linear(4096, 4096)
     # Load on the GPU, if available
     if use_gpu:
         if torch.cuda.device_count() > 1:
             print("Let's use", torch.cuda.device_count(), "GPUs!")
             # Parallely run on multiple GPUs using DataParallel
             model.fc8 = nn.DataParallel(model.fc8)
-            model.fc7 = nn.DataParallel(model.fc7)
+            #model.fc7 = nn.DataParallel(model.fc7)
             model.cuda()
             
         elif torch.cuda.device_count() == 1:
@@ -327,7 +325,7 @@ if __name__=='__main__':
     
     #optimizer = torch.optim.SGD(model.fc8.parameters(), lr=0.001, momentum=0.9)
 #    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), \
-#                                 lr = 0.01)
+#                                 lr = 0.001)
     optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), \
                                  lr = 0.001, momentum=0.9)
     
@@ -335,7 +333,7 @@ if __name__=='__main__':
     
     # set the scheduler, optimizer and retrain (eg. SGD)
     # Decay LR by a factor of 0.1 every 7 epochs
-    step_lr_scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+    step_lr_scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
     
     #####################################################################
     
@@ -348,11 +346,6 @@ if __name__=='__main__':
         
     end = time.time()
     print "Total Execution time for {} epoch : {}".format(N_EPOCHS, (end-start))
-    
-    # Save only the model params
-    mod_name = "c3d_finetune_FC78_ep"+str(N_EPOCHS)+"_w16_SGD.pt"
-    torch.save(model.state_dict(), mod_name)
-    print "Model saved to disk... {}".format(mod_name)
     
     #####################################################################
     #####################################################################
