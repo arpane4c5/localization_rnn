@@ -14,8 +14,10 @@ import utils
 
 class RNNClassifier(nn.Module):
     # Our model
-    def __init__(self, input_size, hidden_size, output_size, n_layers=1, bidirectional=False):
+    def __init__(self, input_size, hidden_size, output_size, n_layers=1,\
+                 bidirectional=False, use_gpu=False):
         super(RNNClassifier, self).__init__()
+        self.use_gpu = use_gpu
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
@@ -69,7 +71,7 @@ class RNNClassifier(nn.Module):
          #* self.n_directions
         hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, \
                              self.hidden_size)
-        return utils.create_variable(hidden)
+        return utils.create_variable(hidden, self.use_gpu)
 
 
 #class RNN(nn.Module):

@@ -17,11 +17,22 @@ from torch.autograd import Variable
 import skimage.io as io
 from skimage.transform import resize
 
+def seed_everything(seed=1234):
+    #random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    np.random.seed(seed)
+    #os.environ['PYTHONHASHSEED'] = str(seed)
 
-def create_variable(tensor):
+def create_variable(tensor, use_gpu=False):
     # Do cuda() before wrapping with variable
-    if torch.cuda.is_available():
-        return Variable(tensor.cuda())
+    if use_gpu:
+        if torch.cuda.is_available():
+            return Variable(tensor.cuda())
+        else:
+            print("GPU not available ! Tensor loaded in main memory.")
+            return Variable(tensor)
     else:
         return Variable(tensor)
 
@@ -270,7 +281,7 @@ def getC3DFeatures(features, videoFiles, sequences):
 
 
 # should be called only for seq_len >=16
-def make_c3d_variables(feats, labels):
+def make_c3d_variables(feats, labels, use_gpu=False):
     # Create the input tensors and target label tensors
     #for item in feats:
         # item is a list with (sequence of) 9 1D vectors (each of 1152 size)
@@ -303,7 +314,7 @@ def make_c3d_variables(feats, labels):
 #                target.extend([1]*(labels[0][i] + labels[1][i] -15))
         
     # Form a wrap into a tensor variable as B X S X I
-    return create_variable(feats), create_variable(torch.Tensor(target))
+    return create_variable(feats, use_gpu), create_variable(torch.Tensor(target), use_gpu)
 
 # Inputs: feats: list of lists
 def make_variables_new(feats, labels, motion=True):
