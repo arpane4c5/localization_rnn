@@ -157,7 +157,7 @@ def save_model_checkpoint(base_name, model, ep, opt, win=16, use_gpu=True):
     """
     # Save only the model params
     name = os.path.join(base_name, "GRU_c3dFC7_ep"+str(ep)+"_seq"+str(win)+"_"+opt+".pt")
-    if use_gpu and torch.cuda.device_count > 1:
+    if use_gpu and torch.cuda.device_count() > 1:
         model = model.module    # good idea to unwrap from DataParallel and save
 
     torch.save(model.state_dict(), name)
@@ -387,7 +387,7 @@ if __name__=='__main__':
     # create dictionary of tiou values and save to destination 
     tiou_dict = {}
     
-    for seq in range(16, 36):
+    for seq in range(23, 31):
         p.set_defaults(SEQ_SIZE = seq)
         tiou = main(**vars(p.parse_args()))
         tiou_dict[seq] = tiou
