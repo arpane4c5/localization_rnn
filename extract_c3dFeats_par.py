@@ -79,8 +79,8 @@ def extract_c3d_all(model, srcFolderPath, destFolderPath, onGPU=True, depth=16, 
     filenames_df = filenames_df.sort_values(["nframes"], ascending=[True])
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
-    batch = 10  # No. of videos in a single batch
-    njobs = 10   # No. of threads
+    batch = 2  # No. of videos in a single batch
+    njobs = 1   # No. of threads
     
     ###########################################################################
     if onGPU:
@@ -304,7 +304,7 @@ def getC3DFrameFeats(m, srcVideoPath, onGPU, depth):
 
 
 if __name__=='__main__':
-    onGPU = False    # Flag True if we want a GPU extract (Serial),
+    onGPU = True    # Flag True if we want a GPU extract (Serial),
     # False if we want a parallel extraction on the CPU cores.
     
     # create a model 
@@ -324,10 +324,10 @@ if __name__=='__main__':
     # The srcPath should have subfolders that contain the training, val, test videos.
     #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
     srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/c3d_feats_16_cpu"
+    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/c3d_feats_16_gpu"
     if not os.path.exists(srcPath):
         srcPath = "/opt/datasets/cricket/ICC_WT20"
-        destPath = "/home/arpan/VisionWorkspace/localization_rnn/c3d_feats_16_cpu"
+        destPath = "/home/arpan/VisionWorkspace/localization_rnn/c3d_feats_16_gpu"
     
     
     print "Using the GPU : "+str(onGPU)
@@ -343,7 +343,7 @@ if __name__=='__main__':
     # sliding the window of size 16 on the GPU. The model is saved on the GPU
     # initially and a forward pass through the network gives the FC7 features vector.
     #
-    # On GPU: Serial Execution time(26 vids) : 14497.0 sec
+    # On GPU: Serial Execution time(26 vids) : 14497.0 sec (14548.9 without ReLU)
     #
     # Parallel Implementation: 5 cores 5 batch size
     # Execution time (26 vids) : 43924.76 sec
