@@ -22,6 +22,7 @@ from math import fabs
 from torch.utils.data import DataLoader
 from Video_Dataset import VideoDataset
 from model_gru import RNNClassifier
+from model_gru import LSTMModel
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 from collections import defaultdict
@@ -76,8 +77,8 @@ def train(trainFeats, model, datasets_loader, optimizer, scheduler, criterion, \
                 accuracy += get_accuracy(preds, y, (SEQ_SIZE - 15))
 #                print "# Accurate : {}".format(accuracy)
                 
-#                print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
-#                          .format(phase, (i+1), net_loss, accuracy))
+                print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
+                          .format(phase, (i+1), net_loss, accuracy))
                 if phase == 'train':
                     optimizer.zero_grad()
                     loss.backward()
@@ -157,8 +158,8 @@ def save_model_checkpoint(base_name, model, ep, opt, win=16, use_gpu=True):
     """
     # Save only the model params
     name = os.path.join(base_name, "GRU_c3dFC7_ep"+str(ep)+"_seq"+str(win)+"_"+opt+".pt")
-    if use_gpu and torch.cuda.device_count() > 1:
-        model = model.module    # good idea to unwrap from DataParallel and save
+#    if use_gpu and torch.cuda.device_count() > 1:
+#        model = model.module    # good idea to unwrap from DataParallel and save
 
     torch.save(model.state_dict(), name)
     print "Model saved to disk... {}".format(name)
@@ -267,12 +268,14 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
     # Creating the RNN and training
     classifier = RNNClassifier(INP_VEC_SIZE, HIDDEN_SIZE, 1, N_LAYERS, \
                                bidirectional=False, use_gpu=use_gpu)
+#    classifier = LSTMModel(INP_VEC_SIZE, HIDDEN_SIZE, 1, N_LAYERS, \
+#                           use_gpu=use_gpu)
     if use_gpu:
-        if torch.cuda.device_count() > 1:
-            print("Let's use", torch.cuda.device_count(), "GPUs!")
-            # Parallely run on multiple GPUs using DataParallel
-            classifier = nn.DataParallel(classifier)
-        classifier.cuda()
+#        if torch.cuda.device_count() > 1:
+#            print("Let's use", torch.cuda.device_count(), "GPUs!")
+#            # Parallely run on multiple GPUs using DataParallel
+#            classifier = nn.DataParallel(classifier)
+        classifier.cuda(1)
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     #criterion = nn.CrossEntropyLoss()
@@ -350,19 +353,19 @@ if __name__=='__main__':
         DATASET = "/opt/datasets/cricket/ICC_WT20"
         c3dFC7FeatsPath = "/home/arpan/VisionWorkspace/localization_rnn/c3d_feats_16_gpu"
     
-    SEQ_SIZE = 35   # has to >=16 (ie. the number of frames used for c3d input)
+    SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
     BATCH_SIZE = 256
     # Parameters and DataLoaders
     HIDDEN_SIZE = 1000
-    N_EPOCHS = 60
+    N_EPOCHS = 4
     N_LAYERS = 1        # no of hidden layers
     threshold = 0.5
     seq_threshold = 0.5
     use_gpu = torch.cuda.is_available()
-#    use_gpu = False
+    use_gpu = False
     
-    base_name = "/home/arpan/DATA_Drive2/Cricket/localization_rnn_logs/GRU_c3d_log_hidden1k"
-    
+#    base_name = "/home/arpan/DATA_Drive2/Cricket/localization_rnn_logs/LSTM_c3d_log_hidden1k"
+    base_name = "/home/hadoop/VisionWorkspace/localization_rnn_logs/LSTM_c3d_log_hidden1k"
     description = "Script for training RNNs on C3D FC7 features"
     p = argparse.ArgumentParser(description=description)
     
@@ -387,7 +390,7 @@ if __name__=='__main__':
     # create dictionary of tiou values and save to destination 
     tiou_dict = {}
     
-    for seq in range(23, 31):
+    for seq in range(22, 23):
         p.set_defaults(SEQ_SIZE = seq)
         tiou = main(**vars(p.parse_args()))
         tiou_dict[seq] = tiou

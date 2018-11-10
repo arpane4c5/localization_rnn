@@ -38,7 +38,7 @@ if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
 
 # Parameters and DataLoaders
 BATCH_SIZE = 16     # for 32 out of memory, for 16 it runs
-N_EPOCHS = 60
+N_EPOCHS = 30
 INP_VEC_SIZE = None
 SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
@@ -46,7 +46,7 @@ seq_threshold = 0.5
 data_dir = "numpy_vids_112x112"
 wts_path = 'c3d.pickle'
 #chkpoint = 'c3d_finetune_FC78_ep5_w16_SGD.pt'
-mod_name = "log/c3d_finetune_FC8_ep"
+mod_name = "log/c3d_finetune_conv5b_FC678_ep"
 
 
 # takes a model to train along with dataset, optimizer and criterion
@@ -100,10 +100,10 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                if (i+1) == 2000:
-                    break
-#            accuracy = fabs(accuracy)/len(datasets_loader[phase])
-            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
+#                if (i+1) == 200:
+#                    break
+            accuracy = fabs(accuracy)/len(datasets_loader[phase].dataset)
+#            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
             training_stats[epoch][phase]['loss'] = net_loss
             training_stats[epoch][phase]['acc'] = accuracy
             training_stats[epoch][phase]['lr'] = optimizer.param_groups[0]['lr']
@@ -118,7 +118,7 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
 #                      training_stats[epoch]['test']['acc']))
         
         if ((epoch+1)%10) == 0:
-            save_model_checkpoint(model, epoch+1, "SGD", win=SEQ_SIZE)
+            save_model_checkpoint(model, epoch+1, "SGD", win=SEQ_SIZE, use_gpu=use_gpu)
 
 #        s7, s8 = 0, 0
 #        for p in model.fc7.parameters():
@@ -134,9 +134,15 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
     # Training finished
     return model
 
-def save_model_checkpoint(model, ep, loss, win=16):
+def save_model_checkpoint(model, ep, opt, win=16, use_gpu=True):
     # Save only the model params
-    name = mod_name+str(ep)+"_w"+str(win)+"_"+loss+".pt"
+    name = mod_name+str(ep)+"_w"+str(win)+"_"+opt+".pt"
+    if use_gpu and torch.cuda.device_count() > 1:
+#        model.conv5a = model.conv5a.module
+        model.conv5b = model.conv5b.module
+        model.fc6 = model.fc6.module    # good idea to unwrap from DataParallel and save
+        model.fc7 = model.fc7.module
+        model.fc8 = model.fc8.module
     torch.save(model.state_dict(), name)
     print "Model saved to disk... {}".format(name)
 
@@ -214,19 +220,8 @@ def make_variables(feats, labels, use_gpu):
 
     # Form a wrap into a tensor variable as B X S X I
     # target is a vector of batchsize
-    return create_variable(feats, use_gpu), \
-            create_variable(torch.LongTensor(target), use_gpu)
-
-def create_variable(tensor, use_gpu):
-    # Do cuda() before wrapping with variable
-    if use_gpu:
-        if torch.cuda.is_available():
-            return Variable(tensor.cuda())
-        else:
-            print("GPU not available ! Tensor loaded in main memory.")
-            return Variable(tensor)
-    else:
-        return Variable(tensor)
+    return utils.create_variable(feats, use_gpu), \
+            utils.create_variable(torch.LongTensor(target), use_gpu)
 
 # save training stats
 def save_stats_dict(stats):
@@ -236,6 +231,8 @@ def save_stats_dict(stats):
 
 if __name__=='__main__':
 
+    seed = 1234
+    utils.seed_everything(seed)
     use_gpu = torch.cuda.is_available()
     #####################################################################
     # Form dataloaders 
@@ -305,14 +302,20 @@ if __name__=='__main__':
         param.requires_grad = False
     # reset the last layer (default requires_grad is True)
     model.fc8 = nn.Linear(4096, 2)
-    #model.fc7 = nn.Linear(4096, 4096)
+    model.fc7 = nn.Linear(4096, 4096)
+    model.fc6 = nn.Linear(8192, 4096)
+    model.conv5b = nn.Conv3d(512, 512, kernel_size=(3, 3, 3), padding=(1, 1, 1))
+#    model.conv5a = nn.Conv3d(512, 512, kernel_size=(3, 3, 3), padding=(1, 1, 1))
     # Load on the GPU, if available
     if use_gpu:
         if torch.cuda.device_count() > 1:
             print("Let's use", torch.cuda.device_count(), "GPUs!")
             # Parallely run on multiple GPUs using DataParallel
             model.fc8 = nn.DataParallel(model.fc8)
-            #model.fc7 = nn.DataParallel(model.fc7)
+            model.fc7 = nn.DataParallel(model.fc7)
+            model.fc6 = nn.DataParallel(model.fc6)
+            model.conv5b = nn.DataParallel(model.conv5b)
+#            model.conv5a = nn.DataParallel(model.conv5b)
             model.cuda()
             
         elif torch.cuda.device_count() == 1:
@@ -333,7 +336,7 @@ if __name__=='__main__':
     
     # set the scheduler, optimizer and retrain (eg. SGD)
     # Decay LR by a factor of 0.1 every 7 epochs
-    step_lr_scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+    step_lr_scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     
     #####################################################################
     
