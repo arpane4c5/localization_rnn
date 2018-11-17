@@ -29,7 +29,7 @@ def create_variable(tensor, use_gpu=False):
     # Do cuda() before wrapping with variable
     if use_gpu:
         if torch.cuda.is_available():
-            return Variable(tensor.cuda())
+            return Variable(tensor.cuda(1))
         else:
             print("GPU not available ! Tensor loaded in main memory.")
             return Variable(tensor)

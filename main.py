@@ -77,8 +77,8 @@ def train(trainFeats, model, datasets_loader, optimizer, scheduler, criterion, \
                 accuracy += get_accuracy(preds, y, (SEQ_SIZE - 15))
 #                print "# Accurate : {}".format(accuracy)
                 
-                print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
-                          .format(phase, (i+1), net_loss, accuracy))
+#                print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
+#                          .format(phase, (i+1), net_loss, accuracy))
                 if phase == 'train':
                     optimizer.zero_grad()
                     loss.backward()
@@ -345,27 +345,27 @@ if __name__=='__main__':
     # Local Paths
     LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
     DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    c3dFC7FeatsPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/c3d_feats_16"
+    c3dFC7FeatsPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/c3dFinetuned_feats_16"
     
     # Server Paths
     if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
         LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
         DATASET = "/opt/datasets/cricket/ICC_WT20"
-        c3dFC7FeatsPath = "/home/arpan/VisionWorkspace/localization_rnn/c3d_feats_16_gpu"
+        c3dFC7FeatsPath = "/home/arpan/VisionWorkspace/localization_rnn/c3dFinetuned_feats_16"
     
     SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
     BATCH_SIZE = 256
     # Parameters and DataLoaders
     HIDDEN_SIZE = 1000
-    N_EPOCHS = 4
+    N_EPOCHS = 60
     N_LAYERS = 1        # no of hidden layers
     threshold = 0.5
     seq_threshold = 0.5
     use_gpu = torch.cuda.is_available()
-    use_gpu = False
+    #use_gpu = True
     
-#    base_name = "/home/arpan/DATA_Drive2/Cricket/localization_rnn_logs/LSTM_c3d_log_hidden1k"
-    base_name = "/home/hadoop/VisionWorkspace/localization_rnn_logs/LSTM_c3d_log_hidden1k"
+    base_name = "/home/arpan/DATA_Drive2/Cricket/localization_rnn_logs/GRU_c3dFine_log_hidden1k"
+    #base_name = "/home/hadoop/VisionWorkspace/localization_rnn_logs/LSTM_c3d_log_hidden1k"
     description = "Script for training RNNs on C3D FC7 features"
     p = argparse.ArgumentParser(description=description)
     
@@ -390,7 +390,7 @@ if __name__=='__main__':
     # create dictionary of tiou values and save to destination 
     tiou_dict = {}
     
-    for seq in range(22, 23):
+    for seq in range(17, 35):
         p.set_defaults(SEQ_SIZE = seq)
         tiou = main(**vars(p.parse_args()))
         tiou_dict[seq] = tiou
