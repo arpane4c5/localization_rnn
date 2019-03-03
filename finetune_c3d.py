@@ -28,8 +28,8 @@ from torch.optim.lr_scheduler import StepLR
 from collections import defaultdict
 
 # Local Paths
-LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+LABELS = "/home/arpan/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
+DATASET = "/home/arpan/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
 
 # Server Paths
 if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
@@ -43,8 +43,9 @@ INP_VEC_SIZE = None
 SEQ_SIZE = 16   # has to >=16 (ie. the number of frames used for c3d input)
 threshold = 0.5
 seq_threshold = 0.5
-data_dir = "numpy_vids_112x112"
+data_dir = "numpy_vids_112x112_sc032"
 wts_path = 'c3d.pickle'
+#wts_path = 'log/c3d_finetune_conv5b_FC678_ep10_w16_SGD.pt'
 #chkpoint = 'c3d_finetune_FC78_ep5_w16_SGD.pt'
 mod_name = "log/c3d_finetune_conv5b_FC678_ep"
 
@@ -58,8 +59,8 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
 #    best_acc = 0.0
     
     for epoch in range(nEpochs):
-        print "-"*60
-        print "Epoch -> {} ".format((epoch+1))
+        print("-"*60)
+        print("Epoch -> {} ".format((epoch+1)))
         training_stats[epoch] = {}
         # for each epoch train the model and then evaluate it
         for phase in ['train']:
@@ -100,10 +101,10 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-#                if (i+1) == 200:
-#                    break
-            accuracy = fabs(accuracy)/len(datasets_loader[phase].dataset)
-#            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
+                if (i+1) == 2000:
+                    break
+#            accuracy = fabs(accuracy)/len(datasets_loader[phase].dataset)
+            accuracy = fabs(accuracy)/(BATCH_SIZE*(i+1))
             training_stats[epoch][phase]['loss'] = net_loss
             training_stats[epoch][phase]['acc'] = accuracy
             training_stats[epoch][phase]['lr'] = optimizer.param_groups[0]['lr']
@@ -123,10 +124,10 @@ def train(trainFrames, valFrames, model, datasets_loader, optimizer, \
 #        s7, s8 = 0, 0
 #        for p in model.fc7.parameters():
 #            s7 += torch.sum(p)
-#            #print p[...,-3:]
+#            #print(p[...,-3:])
 #        for p in model.fc8.parameters():
 #            s8 += torch.sum(p)
-#            #print p[...,-3:]
+#            #print(p[...,-3:])
 #        print("FC7 Sum : {} :: FC8 Sum : {}".format(s7, s8))
 
     # Save dictionary after all the epochs
@@ -144,7 +145,12 @@ def save_model_checkpoint(model, ep, opt, win=16, use_gpu=True):
         model.fc7 = model.fc7.module
         model.fc8 = model.fc8.module
     torch.save(model.state_dict(), name)
-    print "Model saved to disk... {}".format(name)
+    print("Model saved to disk... {}".format(name))
+    # Again wrap into DataParallel
+    model.fc8 = nn.DataParallel(model.fc8)
+    model.fc7 = nn.DataParallel(model.fc7)
+    model.fc6 = nn.DataParallel(model.fc6)
+    model.conv5b = nn.DataParallel(model.conv5b)
 
 def get_1D_preds(preds):
     preds_new = []
@@ -239,9 +245,9 @@ if __name__=='__main__':
     
     # Divide the samples files into training set, validation and test sets
     train_lst, val_lst, test_lst = utils.split_dataset_files(DATASET)
-    print "No. of Training / Val / Test videos : {} / {} / {}".format(len(train_lst), \
-          len(val_lst), len(test_lst))
-    print 60*"-"
+    print("No. of Training / Val / Test videos : {} / {} / {}".format(len(train_lst), \
+          len(val_lst), len(test_lst)))
+    print(60*"-")
     
     # form the names of the list of label files, should be at destination 
     train_lab = [f+".json" for f in train_lst]
@@ -255,16 +261,16 @@ if __name__=='__main__':
     sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
     val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
     
-    print "Train #VideoFrames : {}".format(sizes)
-    print "Test #VideoFrames : {}".format(val_sizes)
+    print("Train #VideoFrames : {}".format(sizes))
+    print("Test #VideoFrames : {}".format(val_sizes))
     
     # create VideoDataset object, create sequences(use meta info)
     hlDataset = VideoDataset(tr_labs, sizes, seq_size=SEQ_SIZE, is_train_set = True)
     hlvalDataset = VideoDataset(val_labs, val_sizes, seq_size=SEQ_SIZE, is_train_set = False)
     
     # total number of training examples (clips)
-    print "No. of Train examples : {} ".format(hlDataset.__len__())
-    print "No. of Test examples : {} ".format(hlvalDataset.__len__())
+    print("No. of Train examples : {} ".format(hlDataset.__len__()))
+    print("No. of Test examples : {} ".format(hlvalDataset.__len__()))
     
     # Create a DataLoader object and sample batches of examples. (get meta-info)
     # These batch samples are used to extract the features from videos parallely
@@ -272,9 +278,9 @@ if __name__=='__main__':
     val_loader = DataLoader(dataset=hlvalDataset, batch_size=BATCH_SIZE, shuffle=False)
     
     # get no. of training examples
-    print "Training size : {}".format(len(train_loader.dataset))
+    print("Training size : {}".format(len(train_loader.dataset)))
     # get no. of validation examples
-    print "Validation size : {}".format(len(val_loader.dataset))
+    print("Validation size : {}".format(len(val_loader.dataset)))
     
     # dataloaders formed for training and validation sets.
     datasets_loader = {'train': train_loader, 'test': val_loader}
@@ -288,7 +294,7 @@ if __name__=='__main__':
     # load np matrices of size N x H x W x Ch (N is #frames, resized to 180 x 320 and 
     # taken center crops of 112 x 112 x 3)
     trainFrames = utils.readAllNumpyFrames(framesPath, train_lst)
-    print "Loading validation/test features from disk..."
+    print("Loading validation/test features from disk...")
     valFrames = utils.readAllNumpyFrames(framesPath, val_lst)
         
     #####################################################################
@@ -296,10 +302,19 @@ if __name__=='__main__':
     # Load the model
     model = c3d.C3D()
     # get the network pretrained weights into the model
+#    model.fc8 = nn.Linear(4096, 2)
     model.load_state_dict(torch.load(wts_path))
     # need to set requires_grad = False for all the layers
     for param in model.parameters():
         param.requires_grad = False
+#    for i in model.fc8.parameters():
+#        i.requires_grad = True
+#    for i in model.fc7.parameters():
+#        i.requires_grad = True
+#    for i in model.fc6.parameters():
+#        i.requires_grad = True
+#    for i in model.conv5b.parameters():
+#        i.requires_grad = True
     # reset the last layer (default requires_grad is True)
     model.fc8 = nn.Linear(4096, 2)
     model.fc7 = nn.Linear(4096, 4096)
@@ -348,7 +363,7 @@ if __name__=='__main__':
                      step_lr_scheduler, criterion, nEpochs=N_EPOCHS, use_gpu=use_gpu)
         
     end = time.time()
-    print "Total Execution time for {} epoch : {}".format(N_EPOCHS, (end-start))
+    print("Total Execution time for {} epoch : {}".format(N_EPOCHS, (end-start)))
     
     #####################################################################
     #####################################################################
@@ -357,7 +372,7 @@ if __name__=='__main__':
     predictions = []
     model.eval()
     # Test a video or calculate the accuracy using the learned model
-    print "Prediction video meta info."
+    print("Prediction video meta info.")
     print("Predicting on the validation/test videos...")
     for i, (keys, seqs, labels) in enumerate(val_loader):
         # Testing on the sample
@@ -376,7 +391,7 @@ if __name__=='__main__':
         #    print('i: {} :: Val keys: {} : seqs : {}'.format(i, keys, seqs)) #keys, pred_probs))
 #        if (i+1) % 100 == 0:
 #            break
-    print "Predictions done on validation/test set..."
+    print("Predictions done on validation/test set...")
     #####################################################################
     
     with open("predictions.pkl", "wb") as fp:
@@ -399,7 +414,7 @@ if __name__=='__main__':
     localization_dict = getLocalizations(val_keys, predictions, BATCH_SIZE, \
                                          threshold, seq_threshold)
 
-    print localization_dict
+    print(localization_dict)
     
 #    for i in range(0,101,10):
 #        filtered_shots = filter_action_segments(localization_dict, epsilon=i)
@@ -421,4 +436,4 @@ if __name__=='__main__':
     #model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     #params = sum([np.prod(p.size()) for p in model_parameters])
     # call count_paramters(model)  for displaying total no. of parameters
-    print "#Parameters : {} ".format(utils.count_parameters(model))
+    print("#Parameters : {} ".format(utils.count_parameters(model)))

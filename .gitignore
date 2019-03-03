@@ -1,8 +1,7 @@
 c3d_resnet18_sports1m_r2_iter_2800000.caffemodel
 conv3d_deepnetA_sport1m_iter_1900000
 *.pyc
-OF_grid*/
-OF_mag_grid*/
+OF_*/
 *.pt
 *.pkl
 hog_feat*/
@@ -12,4 +11,6 @@ vid/
 c3d.pickle
 data/
 numpy_frames_cropped/
+numpy_vids_*/
 c3d_feats_16/
+c3dFinetuned*/

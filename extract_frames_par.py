@@ -28,7 +28,7 @@ def extract_vid_frames(srcFolderPath, destFolderPath, njobs=1, batch=10, stop='a
     srcFolderPath: str
         path to folder which contains the videos
     destFolderPath: str
-        path to store the optical flow values in .bin files
+        path to store the frame pixel values in .npy files
     njobs: int
         no. of cores to be used parallely
     batch: int
@@ -66,9 +66,9 @@ def extract_vid_frames(srcFolderPath, destFolderPath, njobs=1, batch=10, stop='a
             if stop != 'all' and traversed == stop:
                 break
                     
-    print "No. of files to be written to destination : "+str(traversed)
+    print("No. of files to be written to destination : "+str(traversed))
     if traversed == 0:
-        print "Check the structure of the dataset folders !!"
+        print("Check the structure of the dataset folders !!")
         return traversed
     ###########################################################################
     #### Form the pandas Dataframe and parallelize over the files.
@@ -77,39 +77,39 @@ def extract_vid_frames(srcFolderPath, destFolderPath, njobs=1, batch=10, stop='a
     filenames_df = filenames_df.reset_index(drop=True)
     nrows = filenames_df.shape[0]
     
-    for i in range(nrows/batch):
+    for i in range(int(nrows/batch)):
         #batch_diffs = getHOGVideo(filenames_df['infiles'][i], hog)
         # 
         batch_diffs = Parallel(n_jobs=njobs)(delayed(getFrames) \
                           (filenames_df['infiles'][i*batch+j]) \
                           for j in range(batch))
-        print "i = "+str(i)
+        print("i = "+str(i))
         # Writing the diffs in a serial manner
         for j in range(batch):
             if batch_diffs[j] is not None:
                 #with open(filenames_df['outfiles'][i*batch+j] , "wb") as fp:
                 #    pickle.dump(batch_diffs[j], fp)
                 np.save(filenames_df['outfiles'][i*batch+j], batch_diffs[j])
-                print "Written "+str(i*batch+j+1)+" : "+ \
-                                    filenames_df['outfiles'][i*batch+j]
+                print("Written "+str(i*batch+j+1)+" : "+ \
+                                    filenames_df['outfiles'][i*batch+j])
             
     # For last batch which may not be complete, extract serially
-    last_batch_size = nrows - ((nrows/batch)*batch)
+    last_batch_size = nrows - (int(nrows/batch)*batch)
     if last_batch_size > 0:
         batch_diffs = Parallel(n_jobs=njobs)(delayed(getFrames) \
-                              (filenames_df['infiles'][(nrows/batch)*batch+j]) \
+                              (filenames_df['infiles'][int(nrows/batch)*batch+j]) \
                               for j in range(last_batch_size)) 
         # Writing the diffs in a serial manner
         for j in range(last_batch_size):
             if batch_diffs[j] is not None:
 #                with open(filenames_df['outfiles'][(nrows/batch)*batch+j] , "wb") as fp:
 #                    pickle.dump(batch_diffs[j], fp)
-                np.save(filenames_df['outfiles'][(nrows/batch)*batch+j], batch_diffs[j])
-                print "Written "+str((nrows/batch)*batch+j+1)+" : "+ \
-                                    filenames_df['outfiles'][(nrows/batch)*batch+j]
+                np.save(filenames_df['outfiles'][int(nrows/batch)*batch+j], batch_diffs[j])
+                print("Written "+str((nrows/batch)*batch+j+1)+" : "+ \
+                                    filenames_df['outfiles'][int(nrows/batch)*batch+j])
     
     ###########################################################################
-    print len(batch_diffs)
+    print(len(batch_diffs))
     return traversed
 
 
@@ -156,6 +156,16 @@ def getFrames(srcVideoPath):
     frameCount = 0
     features_current_file = []
     
+    max_height = 112
+    max_width = 112
+    scaling_factor=0.32
+    # only shrink if img is bigger than required
+    #if max_height < H: #or max_width < W:
+        # get scaling factor
+     #   scaling_factor = max_height / float(H)
+        #if max_width/float(W) < scaling_factor:
+        #    scaling_factor = max_width / float(W)
+    
     #ret, prev_frame = cap.read()
     assert cap.isOpened(), "Capture object does not return a frame!"
     
@@ -167,34 +177,61 @@ def getFrames(srcVideoPath):
             break
         
         # resize to 180 x 320 
-        curr_frame = cv2.resize(curr_frame, (W/2, H/2), cv2.INTER_AREA)
+        #curr_frame = cv2.resize(curr_frame, (int(W/2), int(H/2)), cv2.INTER_AREA)
+        curr_frame = cv2.resize(curr_frame, None, fx=scaling_factor, \
+                                fy=scaling_factor, interpolation=cv2.INTER_AREA)
         (h, w) = curr_frame.shape[:2]
+        print("Size : {}".format((h,w)))
         # take the centre crop size is 112 x 112 x 3
-        curr_frame = curr_frame[(h/2-56):(h/2+56), (w/2-56):(w/2+56), :]
+        curr_frame = curr_frame[(int(h/2)-56):(int(h/2)+56), (int(w/2)-56):(int(w/2)+56), :]
+        
+        #cv2.imshow("Frame 112x112", curr_frame)
+        #direction = waitTillEscPressed()
         
         # saving as a list of float values (after converting into 1D array)
         features_current_file.append(curr_frame)
 
     # When everything done, release the capture
+    #cv2.destroyAllWindows()
     cap.release()
     #print "{}/{} frames in {}".format(frameCount, totalFrames, srcVideoPath)
     #return features_current_file
     return np.array(features_current_file)      # convert to N x w x h
 
 
+def waitTillEscPressed():
+    while(True):
+        # For moving forward
+        if cv2.waitKey(0)==27:
+            print("Esc Pressed. Move Forward.")
+            return 1
+        # For moving back
+        elif cv2.waitKey(0)==98:
+            print("'b' pressed. Move Back.")
+            return 0
+        # start of shot
+        elif cv2.waitKey(0)==115:
+            print("'s' pressed. Start of shot.")
+            return 2
+        # end of shot
+        elif cv2.waitKey(0)==102:
+            print("'f' pressed. End of shot.")
+            return 3
+
+
 if __name__=='__main__':
-    batch = 10  # No. of videos in a single batch
-    njobs = 10   # No. of threads
+    batch = 1  # No. of videos in a single batch
+    njobs = 1   # No. of threads
 
     #srcPath = '/home/arpan/DATA_Drive/Cricket/dataset_25_fps'
-    srcPath = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    destPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/numpy_vids_112x112"
+    srcPath = "/home/arpan/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+    destPath = "/home/arpan/VisionWorkspace/Cricket/localization_rnn/numpy_vids_112x112_sc032"
     if not os.path.exists(srcPath):
         srcPath = "/opt/datasets/cricket/ICC_WT20"
-        destPath = "/home/arpan/VisionWorkspace/localization_rnn/numpy_vids_112x112"
+        destPath = "/home/arpan/VisionWorkspace/localization_rnn/numpy_vids_112x112_sc032"
     
     start = time.time()
     nfiles = extract_vid_frames(srcPath, destPath, njobs, batch, stop='all')
     end = time.time()
-    print "Total execution time for {} files : {}".format(nfiles, str(end-start))
+    print("Total execution time for {} files : {}".format(nfiles, str(end-start)))
     

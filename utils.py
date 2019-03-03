@@ -29,7 +29,7 @@ def create_variable(tensor, use_gpu=False):
     # Do cuda() before wrapping with variable
     if use_gpu:
         if torch.cuda.is_available():
-            return Variable(tensor.cuda(1))
+            return Variable(tensor.cuda())
         else:
             print("GPU not available ! Tensor loaded in main memory.")
             return Variable(tensor)
@@ -70,7 +70,7 @@ def getNFrames(vid):
     cap = cv2.VideoCapture(vid)
     if not cap.isOpened():
         import sys
-        print "Capture Object not opened ! Abort"
+        print("Capture Object not opened ! Abort")
         sys.exit(0)
         
     l = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -97,7 +97,7 @@ def getFeatureVectors(datasetpath, videoFiles, sequences):
         # use capture object to get the sequences
         cap = cv2.VideoCapture(os.path.join(datasetpath, videoFile))
         if not cap.isOpened():
-            print "Capture object not opened : {}".format(videoFile)
+            print("Capture object not opened : {}".format(videoFile))
             import sys
             sys.exit(0)
             
@@ -111,12 +111,12 @@ def getFeatureVectors(datasetpath, videoFiles, sequences):
             # convert frame to GRAYSCALE
             prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
         else:
-            print "Frame not read: {} : {}".format(videoFile, start_frame)
+            print("Frame not read: {} : {}".format(videoFile, start_frame))
 
         for stime in range(start_frame+1, end_frame+1):
             ret, frame = cap.read()
             if not ret:
-                print "Frame not read : {} : {}".format(videoFile, stime)
+                print("Frame not read : {} : {}".format(videoFile, stime))
                 continue
             
             curr_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -170,7 +170,7 @@ def readAllPartitionFeatures(featuresPath, keys):
         with open(featpath, "rb") as fobj:
             feats[k] = np.load(fobj)
             
-    print "Features loaded into dictionary ..."
+    print("Features loaded into dictionary ...")
     return feats
 
 
@@ -185,7 +185,7 @@ def readAllNumpyFrames(numpyFramesPath, keys):
         featpath = os.path.join(numpyFramesPath, k)+".npy"
         feats[k] = np.load(featpath)
             
-    print "Features loaded into dictionary ..."
+    print("Features loaded into dictionary ...")
     return feats
 
     
@@ -302,17 +302,6 @@ def make_c3d_variables(feats, labels, use_gpu=False):
         temp = [1 if sum(lbls[s:e])>=8 else 0 for s,e in enumerate(range(16, seq_size+1))]
         target.extend(temp)   # for c3d
         
-#        if labels[1][i] == 0:         # completely part of non-action
-#            target.extend([0]*(labels[0][i]-15))
-#        elif labels[0][i] == 0:     # completely part of action
-#            target.extend([1]*(labels[1][i]-15))
-#        else:                       # partially in action, rest non-action
-#            if labels[0][i] > labels[1][i]:     # if mainly part of non-action
-#            # need it to be of size 16 less than the total (correct this)
-#                target.extend([0]*(labels[0][i] + labels[1][i] -15))     
-#            else:
-#                target.extend([1]*(labels[0][i] + labels[1][i] -15))
-        
     # Form a wrap into a tensor variable as B X S X I
     return create_variable(feats, use_gpu), create_variable(torch.Tensor(target), use_gpu)
 
@@ -384,19 +373,21 @@ def save_checkpoint(state, is_best, save_path, filename):
 # function to remove the action segments that have less than "epsilon" frames.
 def filter_action_segments(shots_dict, epsilon=10):
     filtered_shots = {}
-    for k,v in shots_dict.iteritems():
+    for k,v in shots_dict.items():
         vsegs = []
-        for segment in v:
+        vscores = []
+        for idx, segment in enumerate(v["segments"]):
             if (segment[1]-segment[0] >= epsilon):
                 vsegs.append(segment)
-        filtered_shots[k] = vsegs
+                vscores.append(v["scores"][idx])
+        filtered_shots[k] = {"segments":vsegs, "scores":vscores}
     return filtered_shots
 
 # function to remove the non-action segments that have less than "epsilon" frames.
 # Here we need to merge one or more action segments
 def filter_non_action_segments(shots_dict, epsilon=10):
     filtered_shots = {}
-    for k,v in shots_dict.iteritems():
+    for k,v in shots_dict.items():
         vsegs = []
         isFirstSeg = True
         for segment in v:

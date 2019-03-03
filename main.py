@@ -39,8 +39,8 @@ def train(trainFeats, model, datasets_loader, optimizer, scheduler, criterion, \
 #    best_acc = 0.0
     sigm = nn.Sigmoid()
     for epoch in range(nEpochs):
-        print "-"*60
-        print "Epoch -> {} ".format((epoch+1))
+        print("-"*60)
+        print("Epoch -> {} ".format((epoch+1)))
         training_stats[epoch] = {}
         # for each epoch train the model and then evaluate it
         for phase in ['train']:
@@ -72,10 +72,13 @@ def train(trainFeats, model, datasets_loader, optimizer, scheduler, criterion, \
                 preds = sigm(preds.view(preds.size(0)))
                 loss = criterion(preds, y)
                 #print(preds, y)
-                net_loss += loss.data[0]
+                if torch.__version__ == '1.0.0':
+                    net_loss += loss.item()
+                else:
+                    net_loss += loss.data[0]
                 # num_ft_vecs sent to RNN = SEQ_SIZE - 15
                 accuracy += get_accuracy(preds, y, (SEQ_SIZE - 15))
-#                print "# Accurate : {}".format(accuracy)
+#                print("# Accurate : {}".format(accuracy))
                 
 #                print("Phase : {} :: Batch : {} :: Loss : {} :: Accuracy : {}"\
 #                          .format(phase, (i+1), net_loss, accuracy))
@@ -110,7 +113,6 @@ def train(trainFeats, model, datasets_loader, optimizer, scheduler, criterion, \
     with open(loss_filename, 'wb') as fr:
         pickle.dump(training_stats, fr, protocol=pickle.HIGHEST_PROTOCOL)
     # Training finished
-    #return model   # no need to return the reference
 
 
 def predict(featuresPath, val_lst, classifier, val_loader, \
@@ -119,7 +121,7 @@ def predict(featuresPath, val_lst, classifier, val_loader, \
     val_keys = []
     predictions = []
     sigm = nn.Sigmoid()
-    print "Loading validation/test features from disk..."
+    print("Loading validation/test features from disk...")
     #OFValFeatures = utils.readAllOFfeatures(OFfeaturesPath, test_lst)
     #HOGValFeatures = utils.readAllHOGfeatures(HOGfeaturesPath, val_lst)
     valFeatures = utils.readAllPartitionFeatures(featuresPath, val_lst)
@@ -136,7 +138,7 @@ def predict(featuresPath, val_lst, classifier, val_loader, \
         # Validation stage
         inputs, target = utils.make_c3d_variables(batchFeats, labels, use_gpu)
         #inputs, target = utils.make_variables(batchFeats, labels, motion=False)
-        output = classifier(inputs) # of size (BATCHESxSeqLen) X 1
+        output = classifier(inputs) # of size (BATCHESx(SeqLen-15)) X 1
 
         #pred = output.data.max(1, keepdim=True)[1]  # get max value in each row
         pred_probs = sigm(output.view(output.size(0))).data  # get the normalized values (0-1)
@@ -148,7 +150,7 @@ def predict(featuresPath, val_lst, classifier, val_loader, \
         #    print('i: {} :: Val keys: {} : seqs : {}'.format(i, keys, seqs)) #keys, pred_probs))
         #if (i+1) % 10 == 0:
         #    break
-    print "Predictions done on validation/test set..."
+    print("Predictions done on validation/test set...")
     return val_keys, predictions
     
 
@@ -162,7 +164,7 @@ def save_model_checkpoint(base_name, model, ep, opt, win=16, use_gpu=True):
 #        model = model.module    # good idea to unwrap from DataParallel and save
 
     torch.save(model.state_dict(), name)
-    print "Model saved to disk... {}".format(name)
+    print("Model saved to disk... {}".format(name))
     
 
 def get_accuracy(preds, targets, num_fts):
@@ -177,7 +179,7 @@ def get_accuracy(preds, targets, num_fts):
     t_new = targets.data.cpu().numpy()
     # print("preds", preds_new[:5])
     # print("targets", tar_new[:5])
-    this_batch_size = t_new.shape[0]/num_fts
+    this_batch_size = int(t_new.shape[0]/num_fts)
     th = num_fts/2.
     t_new= [1 if sum(t_new[(num_fts*i): (num_fts*(i+1))])>th else 0 \
      for i in range(this_batch_size)]
@@ -218,7 +220,7 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
     seed = 1234
     utils.seed_everything(seed)
     
-    print 60*"#"
+    print(60*"#")
     # Divide the samples files into training set, validation and test sets
     train_lst, val_lst, test_lst = utils.split_dataset_files(DATASET)
     print("SEQ_SIZE : {}".format(SEQ_SIZE))
@@ -232,9 +234,9 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
     
     tr_labs = [os.path.join(LABELS, f) for f in train_lab]
     sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in train_lst]
-    print "Size : {}".format(sizes)
+    print("Size : {}".format(sizes))
     hlDataset = VideoDataset(tr_labs, sizes, seq_size=SEQ_SIZE, is_train_set = True)
-    print hlDataset.__len__()
+    print(hlDataset.__len__())
     
     #####################################################################
     
@@ -262,7 +264,7 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
     ########
     
     #fc7 layer output size
-    INP_VEC_SIZE = features[features.keys()[0]].shape[-1] 
+    INP_VEC_SIZE = features[list(features.keys())[0]].shape[-1] 
     print("INP_VEC_SIZE = ", INP_VEC_SIZE)
     
     # Creating the RNN and training
@@ -275,7 +277,7 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
 #            print("Let's use", torch.cuda.device_count(), "GPUs!")
 #            # Parallely run on multiple GPUs using DataParallel
 #            classifier = nn.DataParallel(classifier)
-        classifier.cuda(1)
+        classifier.cuda()
 
     optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
     #criterion = nn.CrossEntropyLoss()
@@ -287,20 +289,21 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
     
     print("Training for %d epochs..." % N_EPOCHS)
     # Training the model on the features for N_EPOCHS 
-    train(features, classifier, datasets_loader, optimizer, step_lr_scheduler, \
-          criterion, SEQ_SIZE, N_EPOCHS, use_gpu, base_name)
-    
+#    train(features, classifier, datasets_loader, optimizer, step_lr_scheduler, \
+#          criterion, SEQ_SIZE, N_EPOCHS, use_gpu, base_name)
+    mod_file = os.path.join(base_name, "GRU_c3dFC7_ep60_seq27_Adam.pt")
+    classifier.load_state_dict(torch.load(mod_file))    
     end = time.time()
     print("Time for training : {}".format(end-start))
     #####################################################################
     
     # Test a video or calculate the accuracy using the learned model
-    print "Prediction video meta info."
+    print("Prediction video meta info.")
     val_labs = [os.path.join(LABELS, f) for f in val_lab]
     val_sizes = [utils.getNFrames(os.path.join(DATASET, f+".avi")) for f in val_lst]
-    print "Size : {}".format(val_sizes)
+    print("Size : {}".format(val_sizes))
     hlvalDataset = VideoDataset(val_labs, val_sizes, seq_size=SEQ_SIZE, is_train_set = False)
-    print hlvalDataset.__len__()
+    print(hlvalDataset.__len__())
     
     # Create a DataLoader object and sample batches of examples. 
     # These batch samples are used to extract the features from videos parallely
@@ -311,6 +314,11 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
     val_keys, predictions = predict(featuresPath, val_lst, classifier, val_loader, \
           use_gpu)
     
+#    with open(os.path.join(base_name, "predictions_seq"+str(SEQ_SIZE)+".pkl"), "wb") as fp:
+#        pickle.dump(predictions, fp)
+#    
+#    with open(os.path.join(base_name, "val_keys_seq"+str(SEQ_SIZE)+".pkl"), "wb") as fp:
+#        pickle.dump(val_keys, fp)
 
     #####################################################################
 
@@ -322,30 +330,30 @@ def main(DATASET, LABELS, featuresPath, base_name, SEQ_SIZE=16, BATCH_SIZE=256, 
 #    print localization_dict
 
     # Apply filtering    
-    i = 60  # optimum
+    i = 50  # optimum
     filtered_shots = utils.filter_action_segments(localization_dict, epsilon=i)
     #i = 7  # 
     #filtered_shots = filter_non_action_segments(filtered_shots, epsilon=i)
     filt_shots_filename = os.path.join(base_name, "predicted_localizations_th0_5_filt"\
             +str(i)+"_ep"+str(N_EPOCHS)+"_seq"+str(SEQ_SIZE)+".json")
-    with open(filt_shots_filename, 'w') as fp:
-        json.dump(filtered_shots, fp)
+#    with open(filt_shots_filename, 'w') as fp:
+#        json.dump(filtered_shots, fp)
     print("Prediction file {} !!".format(filt_shots_filename))
     
     tiou =  calculate_tIoU(LABELS, filtered_shots)
     #####################################################################
     # count no. of parameters in the model
-    print "#Parameters : {} ".format(utils.count_parameters(classifier))
+    print("#Parameters : {} ".format(utils.count_parameters(classifier)))
     
-    print 60*'#'
+    print(60*'#')
     return tiou
 
 
 if __name__=='__main__':
     # Local Paths
-    LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-    DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
-    c3dFC7FeatsPath = "/home/hadoop/VisionWorkspace/Cricket/localization_rnn/c3dFinetuned_feats_16"
+    LABELS = "/home/arpan/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
+    DATASET = "/home/arpan/VisionWorkspace/VideoData/sample_cricket/ICC WT20"
+    c3dFC7FeatsPath = "/home/arpan/VisionWorkspace/Cricket/localization_rnn/c3dFinetuned_feats_16"
     
     # Server Paths
     if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
@@ -364,8 +372,7 @@ if __name__=='__main__':
     use_gpu = torch.cuda.is_available()
     #use_gpu = True
     
-    base_name = "/home/arpan/DATA_Drive2/Cricket/localization_rnn_logs/GRU_c3dFine_log_hidden1k"
-    #base_name = "/home/hadoop/VisionWorkspace/localization_rnn_logs/LSTM_c3d_log_hidden1k"
+    base_name = "/home/arpan/DATA_Drive2/Cricket/localization_rnn_logs/GRU_c3dFine_log_hidden1k_new"
     description = "Script for training RNNs on C3D FC7 features"
     p = argparse.ArgumentParser(description=description)
     
@@ -390,14 +397,14 @@ if __name__=='__main__':
     # create dictionary of tiou values and save to destination 
     tiou_dict = {}
     
-    for seq in range(17, 35):
+    for seq in range(27, 28):
         p.set_defaults(SEQ_SIZE = seq)
         tiou = main(**vars(p.parse_args()))
         tiou_dict[seq] = tiou
     
     dest = vars(p.parse_args())['base_name']
-    with open(os.path.join(dest, 'tiou'+'_HD'+str(HIDDEN_SIZE)+'.json'), 'w') as fp:
-        json.dump(tiou_dict, fp)
+#    with open(os.path.join(dest, 'tiou'+'_HD'+str(HIDDEN_SIZE)+'.json'), 'w') as fp:
+#        json.dump(tiou_dict, fp)
     print("TIoU values written for all iterations !!")
     
 #    #####################################################################

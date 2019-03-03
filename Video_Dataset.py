@@ -17,14 +17,6 @@ from torch.utils.data import Dataset, DataLoader
 import json
 import os
 
-# Local Paths
-LABELS = "/home/hadoop/VisionWorkspace/Cricket/scripts/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-DATASET = "/home/hadoop/VisionWorkspace/VideoData/sample_cricket"
-
-# Server Paths
-if os.path.exists("/opt/datasets/cricket/ICC_WT20"):
-    LABELS = "/home/arpan/VisionWorkspace/shot_detection/supporting_files/sample_set_labels/sample_labels_shots/ICC WT20"
-    DATASET = "/opt/datasets/cricket"
 
 class VideoDataset(Dataset):
     """ Cricket Strokes dataset."""
@@ -50,7 +42,7 @@ class VideoDataset(Dataset):
         self.frm_sequences = []
         self.labels = []
         for i, labfile in enumerate(vidsList):     
-            k = self.shots[i].keys()[0] #key value for the ith dict
+            k = list(self.shots[i].keys())[0] #key value for the ith dict
             pos = self.shots[i][k]  # get list of tuples for k
             pos.reverse()   # reverse list and keep popping
             

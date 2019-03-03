@@ -47,7 +47,7 @@ def form_video_from_frames(srcFramesPath, destFileName):
     flist = os.listdir(srcFramesPath)
     flist = [int(f.split('.')[0]) for f in flist]
     flist = sorted(flist)
-    print flist
+    print(flist)
     
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     out = cv2.VideoWriter(destFileName, fourcc, 25.0, (W, H))
